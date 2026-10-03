@@ -1,0 +1,13 @@
+{
+  "name": "sdmcampusfix",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client -- --host 0.0.0.0\"",
+    "client": "npm run dev --prefix client -- --host 0.0.0.0",
+    "server": "npm run dev --prefix server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
