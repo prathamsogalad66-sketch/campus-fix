@@ -3586,10 +3586,13 @@ body {
 }
 
 @keyframes pulseGlow {
-    0%, 100% {
+
+    0%,
+    100% {
         opacity: 1;
         transform: scale(1);
     }
+
     50% {
         opacity: 0.45;
         transform: scale(1.2);
@@ -4009,5 +4012,3 @@ body {
     background: linear-gradient(135deg, #92400e, #b45309);
     box-shadow: 0 4px 14px rgba(180, 83, 9, 0.4);
 }
-
-
