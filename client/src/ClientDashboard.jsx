@@ -9,6 +9,7 @@ import {
     BookOpen,
     Building,
     Building2,
+    Camera,
     Check,
     CheckCircle2,
     ChevronDown,
@@ -19,6 +20,7 @@ import {
     EyeOff,
     FilePlus2,
     HardHat,
+    Image as ImageIcon,
     KeyRound,
     LayoutDashboard,
     Lock,
@@ -33,6 +35,7 @@ import {
     Shield,
     ShieldAlert,
     Sparkles,
+    ThumbsUp,
     Trash2,
     Truck,
     UserCheck,
@@ -151,6 +154,37 @@ const spaceImages = [
     { src: '/sdmcet-campus-main.jpg', alt: 'Students and campus life at SDMCET' },
 ]
 
+// Client-side image compression for lightweight MongoDB storage
+function compressImage(file, maxWidth = 900, quality = 0.65) {
+    return new Promise((resolve, reject) => {
+        if (!file || !file.type.startsWith('image/')) {
+            return reject(new Error('Selected file is not an image.'))
+        }
+        const reader = new FileReader()
+        reader.readAsDataURL(file)
+        reader.onload = (e) => {
+            const img = new Image()
+            img.src = e.target.result
+            img.onload = () => {
+                const canvas = document.createElement('canvas')
+                let width = img.width
+                let height = img.height
+                if (width > maxWidth) {
+                    height = Math.round((height * maxWidth) / width)
+                    width = maxWidth
+                }
+                canvas.width = width
+                canvas.height = height
+                const ctx = canvas.getContext('2d')
+                ctx.drawImage(img, 0, 0, width, height)
+                resolve(canvas.toDataURL('image/jpeg', quality))
+            }
+            img.onerror = () => reject(new Error('Failed to load image.'))
+        }
+        reader.onerror = () => reject(new Error('Failed to read file.'))
+    })
+}
+
 const initialForm = {
     title: '',
     description: '',
@@ -159,6 +193,7 @@ const initialForm = {
     priority: 'Medium',
     reporter: '',
     reporterEmail: '',
+    photoBefore: '',
 }
 
 function readSession() {
@@ -563,6 +598,47 @@ function App() {
             setNotice('Report has been deleted.')
         } catch (error) {
             setNotice(error.message || 'Failed to delete report.')
+        }
+    }
+
+    // Upvote / "Me Too" duplicate ticket suppression
+    const handleUpvote = async (issueId, e) => {
+        if (e && e.stopPropagation) e.stopPropagation()
+        try {
+            const userIdentifier = user?.email || user?.name || 'student'
+            const res = await fetch(`${apiUrl}/issues/${issueId}/upvote`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userEmail: userIdentifier, userName: user?.name || '' }),
+            })
+            const updated = await res.json()
+            if (!res.ok) throw new Error(updated.message || 'Could not register upvote.')
+
+            setIssues((curr) => curr.map((item) => (item._id === issueId ? { ...item, ...updated } : item)))
+            setNotice('👍 Upvote counted! SDMCET estates office notified of additional affected student.')
+        } catch (error) {
+            setNotice(error.message || 'Could not upvote.')
+        }
+    }
+
+    // Upload resolution proof photo directly to MongoDB
+    const handleUploadAfterPhoto = async (issueId, base64Photo) => {
+        setSaving(true)
+        try {
+            const res = await fetch(`${apiUrl}/issues/${issueId}/photo`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ photoAfter: base64Photo }),
+            })
+            const updated = await res.json()
+            if (!res.ok) throw new Error(updated.message || 'Could not upload resolution photo.')
+
+            setIssues((curr) => curr.map((item) => (item._id === issueId ? { ...item, ...updated } : item)))
+            setNotice('📸 Resolution proof photo uploaded and stored in MongoDB!')
+        } catch (error) {
+            setNotice(error.message || 'Failed to upload photo.')
+        } finally {
+            setSaving(false)
         }
     }
 
@@ -1118,6 +1194,11 @@ function App() {
                                                         <strong>{issue.title}</strong>
                                                         <span>
                                                             {issue.category} <i>·</i> {issue.location}
+                                                            {issue.photoBefore && (
+                                                                <span className="photo-attached-tag" title="Photo evidence attached (MongoDB)">
+                                                                    <Camera size={11} /> Photo
+                                                                </span>
+                                                            )}
                                                             {isAdmin && (
                                                                 <small style={{ color: '#a0a693', marginLeft: '6px' }}>
                                                                     by {issue.reporter}
@@ -1144,10 +1225,15 @@ function App() {
                                                         {issue.priority}
                                                     </span>
 
-                                                    <span className="issue-votes">
-                                                        <ArrowUpRight size={14} />
-                                                        {issue.votes || 0}
-                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        className="issue-votes-btn"
+                                                        onClick={(e) => handleUpvote(issue._id, e)}
+                                                        title="Click to endorse / Me Too (+1 affected student)"
+                                                    >
+                                                        <ThumbsUp size={12} />
+                                                        <span>{issue.votes || 0}</span>
+                                                    </button>
                                                 </button>
                                             ))}
 
@@ -1188,6 +1274,8 @@ function App() {
                                         setAdminForm={setAdminForm}
                                         onSaveAdmin={saveAdminAssignment}
                                         onDelete={deleteIssue}
+                                        onUpvote={handleUpvote}
+                                        onUploadAfterPhoto={handleUploadAfterPhoto}
                                         saving={saving}
                                         autoNotifyWhatsApp={autoNotifyWhatsApp}
                                         setAutoNotifyWhatsApp={setAutoNotifyWhatsApp}
@@ -1544,6 +1632,51 @@ function App() {
                             />
                         </label>
 
+                        {/* 5. Photo Proof Upload (Stored in MongoDB) */}
+                        <div className="photo-upload-container">
+                            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', fontWeight: 700, color: '#9ea392', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '6px' }}>
+                                <span>📸 Attach Photo Proof (Optional)</span>
+                                <span style={{ fontSize: '10px', color: '#efc15e', textTransform: 'none', fontWeight: 600 }}>Stored in MongoDB</span>
+                            </label>
+                            {form.photoBefore ? (
+                                <div className="photo-preview-card">
+                                    <img src={form.photoBefore} alt="Problem preview" className="photo-preview-img" />
+                                    <div className="photo-preview-meta">
+                                        <span>Photo attached ready to save</span>
+                                        <button
+                                            type="button"
+                                            className="photo-remove-btn"
+                                            onClick={() => setForm({ ...form, photoBefore: '' })}
+                                        >
+                                            <X size={13} /> Remove
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <label className="photo-dropzone">
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        style={{ display: 'none' }}
+                                        onChange={async (e) => {
+                                            const file = e.target.files?.[0]
+                                            if (file) {
+                                                try {
+                                                    const base64 = await compressImage(file)
+                                                    setForm(prev => ({ ...prev, photoBefore: base64 }))
+                                                } catch (err) {
+                                                    alert(err.message || 'Failed to process image.')
+                                                }
+                                            }
+                                        }}
+                                    />
+                                    <Camera size={22} style={{ color: '#efc15e', marginBottom: '4px' }} />
+                                    <strong style={{ color: '#e6e2d3', fontSize: '12px' }}>Click or tap to snap / upload photo proof</strong>
+                                    <small style={{ color: '#888d7b', fontSize: '10px' }}>Compressed & stored directly in MongoDB document</small>
+                                </label>
+                            )}
+                        </div>
+
                         <div className="form-row">
                             <label>
                                 Reporter name
@@ -1696,12 +1829,15 @@ function IssueDetailsPanel({
     setAdminForm,
     onSaveAdmin,
     onDelete,
+    onUpvote,
+    onUploadAfterPhoto,
     saving,
     autoNotifyWhatsApp,
     setAutoNotifyWhatsApp,
 }) {
     const [pendingDeleteId, setPendingDeleteId] = useState(null)
     const [flowNotice, setFlowNotice] = useState('')
+    const [lightboxPhoto, setLightboxPhoto] = useState(null)
 
     // Clear flow notice toast automatically
     useEffect(() => {
@@ -2033,6 +2169,94 @@ function IssueDetailsPanel({
 
             <p className="detail-description">{issue.description}</p>
 
+            {/* MONGODB PHOTO EVIDENCE (BEFORE & AFTER) */}
+            <div className="detail-photo-section">
+                <div className="photo-section-head">
+                    <span className="photo-section-kicker">📸 CAMPUS PHOTO EVIDENCE (MONGODB PROOF)</span>
+                    <span className="photo-section-tag">
+                        {issue.photoBefore || issue.photoAfter ? 'Visual Evidence Attached' : 'No Photo Yet'}
+                    </span>
+                </div>
+                <div className="photo-cards-grid">
+                    {/* Before Fix Card */}
+                    <div className="evidence-card">
+                        <div className="evidence-card-label before">
+                            <span>Before Repair (Reported)</span>
+                        </div>
+                        {issue.photoBefore ? (
+                            <div className="evidence-img-wrap" onClick={() => setLightboxPhoto(issue.photoBefore)}>
+                                <img src={issue.photoBefore} alt="Reported problem" className="evidence-img" />
+                                <span className="evidence-expand-hint"><Eye size={12} /> Expand Photo</span>
+                            </div>
+                        ) : (
+                            <div className="evidence-empty-box">
+                                <ImageIcon size={22} style={{ opacity: 0.35, color: '#9ea392' }} />
+                                <span>No initial photo provided</span>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* After Fix Card */}
+                    <div className="evidence-card">
+                        <div className="evidence-card-label after">
+                            <span>After Repair (Resolution Proof)</span>
+                        </div>
+                        {issue.photoAfter ? (
+                            <div className="evidence-img-wrap" onClick={() => setLightboxPhoto(issue.photoAfter)}>
+                                <img src={issue.photoAfter} alt="Resolution proof" className="evidence-img" />
+                                <span className="evidence-expand-hint"><Check size={12} /> Verified Fix</span>
+                            </div>
+                        ) : (
+                            <div className="evidence-empty-box">
+                                <HardHat size={22} style={{ opacity: 0.35, color: '#efc15e' }} />
+                                <span>{isResolved ? 'Repair completed' : 'Awaiting fix verification'}</span>
+                                {isAdmin && (
+                                    <label className="attach-proof-btn">
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            style={{ display: 'none' }}
+                                            onChange={async (e) => {
+                                                const file = e.target.files?.[0]
+                                                if (file && onUploadAfterPhoto) {
+                                                    try {
+                                                        const base64 = await compressImage(file)
+                                                        onUploadAfterPhoto(issue._id, base64)
+                                                    } catch (err) {
+                                                        alert(err.message || 'Image processing failed.')
+                                                    }
+                                                }
+                                            }}
+                                        />
+                                        <Camera size={12} /> Attach Fix Photo
+                                    </label>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* "ME TOO / UPVOTE" DUPLICATE SUPPRESSION CARD */}
+            <div className="upvote-card">
+                <div className="upvote-info">
+                    <div className="upvote-count-title">
+                        <ThumbsUp size={15} style={{ color: '#efc15e' }} />
+                        <strong>{issue.votes || 0} Affected Student{issue.votes === 1 ? '' : 's'}</strong>
+                    </div>
+                    <p>Facing this same campus issue? Upvote to notify estates maintenance without filing duplicate tickets.</p>
+                </div>
+                <button
+                    type="button"
+                    className="upvote-btn-active"
+                    onClick={(e) => onUpvote && onUpvote(issue._id, e)}
+                    title="Endorse this report (+1 student affected)"
+                >
+                    <ThumbsUp size={14} />
+                    <span>Me Too (+1)</span>
+                </button>
+            </div>
+
             <dl className="detail-meta">
                 <div>
                     <dt>LOCATION</dt>
@@ -2289,6 +2513,26 @@ function IssueDetailsPanel({
                         <Trash2 size={15} /> {isAdmin ? 'Delete Issue (Admin)' : 'Cancel My Report'}
                     </button>
                 ))}
+
+            {/* LIGHTBOX MODAL FOR HIGH-RES PHOTO INSPECTION */}
+            {lightboxPhoto && (
+                <div className="photo-lightbox-backdrop" onClick={() => setLightboxPhoto(null)}>
+                    <div className="photo-lightbox-modal" onClick={(e) => e.stopPropagation()}>
+                        <button
+                            type="button"
+                            className="lightbox-close-btn"
+                            onClick={() => setLightboxPhoto(null)}
+                            aria-label="Close photo"
+                        >
+                            <X size={18} />
+                        </button>
+                        <img src={lightboxPhoto} alt="Full resolution proof from MongoDB" className="lightbox-img" />
+                        <div className="lightbox-caption">
+                            <span>📸 Campus Fix Photo Evidence • Stored in MongoDB Document</span>
+                        </div>
+                    </div>
+                </div>
+            )}
         </aside>
     )
 }

@@ -13,6 +13,9 @@ const issueSchema = new mongoose.Schema(
         assignedWorker: { type: String, default: 'Unassigned', trim: true },
         adminNotes: { type: String, default: '', trim: true },
         votes: { type: Number, default: 0 },
+        upvotedBy: { type: [String], default: [] },
+        photoBefore: { type: String, default: '' },
+        photoAfter: { type: String, default: '' },
     },
     { timestamps: true }
 );

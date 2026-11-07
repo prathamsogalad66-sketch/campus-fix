@@ -4285,3 +4285,381 @@ body {
     box-shadow: 0 6px 18px rgba(37, 211, 102, 0.42);
     color: #ffffff !important;
 }
+
+/* ==========================================================================
+   PHOTO PROOF & UPVOTE STYLES (MONGODB CONNECTED)
+   ========================================================================== */
+
+/* Report form photo dropzone & preview */
+.photo-upload-container {
+    margin-top: 10px;
+    margin-bottom: 12px;
+}
+
+.photo-dropzone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 14px 12px;
+    border: 1.5px dashed #444837;
+    border-radius: 8px;
+    background: #181b13;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.2s ease;
+}
+
+.photo-dropzone:hover {
+    border-color: #b99748;
+    background: #202419;
+}
+
+.photo-preview-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border: 1px solid #3c422e;
+    border-radius: 8px;
+    background: #191c13;
+}
+
+.photo-preview-img {
+    width: 60px;
+    height: 60px;
+    border-radius: 6px;
+    object-fit: cover;
+    border: 1px solid #4a5238;
+}
+
+.photo-preview-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 11px;
+    color: #a4a997;
+}
+
+.photo-remove-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: 1px solid #6b2e2e;
+    background: #311818;
+    color: #fca5a5;
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    width: fit-content;
+}
+
+/* Detail panel photo evidence showcase */
+.detail-photo-section {
+    margin: 14px 0;
+    padding: 12px 14px;
+    border: 1px solid #36392c;
+    border-radius: 10px;
+    background: linear-gradient(145deg, #181a13 0%, #12140e 100%);
+}
+
+.photo-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.photo-section-kicker {
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    color: #efc15e;
+    text-transform: uppercase;
+}
+
+.photo-section-tag {
+    font-size: 10px;
+    font-weight: 600;
+    color: #9ea392;
+    background: #22261b;
+    padding: 2px 7px;
+    border-radius: 4px;
+}
+
+.photo-cards-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.evidence-card {
+    border: 1px solid #323528;
+    border-radius: 8px;
+    background: #14160f;
+    overflow: hidden;
+}
+
+.evidence-card-label {
+    padding: 5px 8px;
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid #2d3024;
+}
+
+.evidence-card-label.before {
+    background: #22251a;
+    color: #d1ccba;
+}
+
+.evidence-card-label.after {
+    background: #172a1e;
+    color: #86efac;
+    border-bottom-color: #1e452a;
+}
+
+.evidence-img-wrap {
+    position: relative;
+    cursor: pointer;
+    height: 105px;
+    overflow: hidden;
+}
+
+.evidence-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.25s ease;
+}
+
+.evidence-img-wrap:hover .evidence-img {
+    transform: scale(1.05);
+}
+
+.evidence-expand-hint {
+    position: absolute;
+    bottom: 4px;
+    right: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.75);
+    color: #f7f3e6;
+    font-size: 9px;
+    font-weight: 600;
+}
+
+.evidence-empty-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 105px;
+    padding: 10px;
+    text-align: center;
+    gap: 5px;
+    font-size: 10px;
+    color: #7d8272;
+}
+
+.attach-proof-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 4px;
+    padding: 4px 8px;
+    border-radius: 5px;
+    border: 1px solid #22c55e;
+    background: #17321e;
+    color: #86efac;
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.attach-proof-btn:hover {
+    background: #224a2c;
+    box-shadow: 0 0 10px rgba(34, 197, 94, 0.35);
+}
+
+/* Upvote / Me Too Card */
+.upvote-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 12px 0 14px;
+    padding: 12px 14px;
+    border: 1px solid #3c4030;
+    border-radius: 8px;
+    background: #1a1e14;
+}
+
+.upvote-info {
+    flex: 1;
+}
+
+.upvote-count-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #f7f3e6;
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 2px;
+}
+
+.upvote-info p {
+    margin: 0;
+    font-size: 11px;
+    color: #929785;
+    line-height: 1.35;
+}
+
+.upvote-btn-active {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 36px;
+    padding: 7px 12px;
+    border-radius: 6px;
+    border: 1px solid #b99748;
+    background: linear-gradient(135deg, #302816 0%, #201c12 100%);
+    color: #fde047;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+}
+
+.upvote-btn-active:hover {
+    background: linear-gradient(135deg, #45391c 0%, #2e2617 100%);
+    border-color: #facc15;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(234, 179, 8, 0.3);
+}
+
+/* List tags */
+.photo-attached-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-left: 6px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: #282717;
+    border: 1px solid #735d26;
+    color: #fde047;
+    font-size: 9px;
+    font-weight: 700;
+}
+
+.issue-votes-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 5px;
+    border: 1px solid #3c4030;
+    background: #20231a;
+    color: #efc15e;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.18s ease;
+}
+
+.issue-votes-btn:hover {
+    border-color: #b99748;
+    background: #312e1b;
+    color: #fef08a;
+    transform: scale(1.05);
+}
+
+/* Photo Lightbox Backdrop */
+.photo-lightbox-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.88);
+    backdrop-filter: blur(5px);
+    padding: 20px;
+    animation: fadeInModal 0.2s ease;
+}
+
+.photo-lightbox-modal {
+    position: relative;
+    max-width: 90vw;
+    max-height: 88vh;
+    border-radius: 10px;
+    border: 1px solid #4a4e3d;
+    background: #14160f;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.lightbox-img {
+    max-width: 100%;
+    max-height: 75vh;
+    object-fit: contain;
+    background: #090a07;
+}
+
+.lightbox-close-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1px solid #666a56;
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    z-index: 10;
+}
+
+.lightbox-close-btn:hover {
+    background: #e11d48;
+    border-color: #e11d48;
+}
+
+.lightbox-caption {
+    padding: 8px 14px;
+    background: #1b1e15;
+    color: #d1ccba;
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
+    border-top: 1px solid #2d3024;
+}
+
+@media (max-width: 600px) {
+    .photo-cards-grid {
+        grid-template-columns: 1fr;
+    }
+    .upvote-card {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .upvote-btn-active {
+        justify-content: center;
+    }
+}

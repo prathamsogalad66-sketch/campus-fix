@@ -155,7 +155,7 @@ router.get('/', async (req, res, next) => {
 // POST /api/issues - user registers a new campus issue
 router.post('/', async (req, res, next) => {
     try {
-        const { title, description, category, location, priority, reporter, reporterEmail } = req.body;
+        const { title, description, category, location, priority, reporter, reporterEmail, photoBefore } = req.body;
         if (!title || !description || !location) {
             return res.status(400).json({ message: 'Title, description, and location are required.' });
         }
@@ -172,6 +172,9 @@ router.post('/', async (req, res, next) => {
             assignedWorker: 'Unassigned',
             adminNotes: 'Report received by SDMCET facility helpdesk. Awaiting admin review.',
             votes: 0,
+            upvotedBy: [],
+            photoBefore: photoBefore || '',
+            photoAfter: '',
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
         };
@@ -190,15 +193,71 @@ router.post('/', async (req, res, next) => {
     }
 });
 
+// POST /api/issues/:id/upvote - Upvote / "Me Too" duplicate report endorsement
+router.post('/:id/upvote', async (req, res, next) => {
+    try {
+        const userIdentifier = req.body.userEmail || req.body.userName || req.ip || 'anonymous';
+        if (!mongooseReady()) {
+            const index = demoIssues.findIndex((i) => i._id === req.params.id);
+            if (index === -1) return res.status(404).json({ message: 'Issue not found.' });
+            const issue = demoIssues[index];
+            issue.votes = (issue.votes || 0) + 1;
+            if (!issue.upvotedBy) issue.upvotedBy = [];
+            issue.upvotedBy.push(userIdentifier);
+            issue.updatedAt = new Date().toISOString();
+            saveLocalIssues(demoIssues);
+            return res.json(issue);
+        }
+
+        const issue = await Issue.findById(req.params.id);
+        if (!issue) return res.status(404).json({ message: 'Issue not found.' });
+
+        issue.votes = (issue.votes || 0) + 1;
+        if (!issue.upvotedBy) issue.upvotedBy = [];
+        issue.upvotedBy.push(userIdentifier);
+        await issue.save();
+
+        return res.json(issue);
+    } catch (error) {
+        next(error);
+    }
+});
+
+// PATCH /api/issues/:id/photo - Upload Before or After photo proof directly into MongoDB
+router.patch('/:id/photo', async (req, res, next) => {
+    try {
+        const { photoBefore, photoAfter } = req.body;
+        const updates = { updatedAt: new Date().toISOString() };
+        if (photoBefore !== undefined) updates.photoBefore = photoBefore;
+        if (photoAfter !== undefined) updates.photoAfter = photoAfter;
+
+        if (!mongooseReady()) {
+            const index = demoIssues.findIndex((i) => i._id === req.params.id);
+            if (index === -1) return res.status(404).json({ message: 'Issue not found.' });
+            demoIssues[index] = { ...demoIssues[index], ...updates };
+            saveLocalIssues(demoIssues);
+            return res.json(demoIssues[index]);
+        }
+
+        const issue = await Issue.findByIdAndUpdate(req.params.id, updates, { new: true });
+        if (!issue) return res.status(404).json({ message: 'Issue not found.' });
+        return res.json(issue);
+    } catch (error) {
+        next(error);
+    }
+});
+
 // PATCH /api/issues/:id - general update (status, priority, assignedWorker, adminNotes)
 router.patch('/:id', async (req, res, next) => {
     try {
-        const { status, priority, assignedWorker, adminNotes } = req.body;
+        const { status, priority, assignedWorker, adminNotes, photoBefore, photoAfter } = req.body;
         const updates = {};
         if (status) updates.status = status;
         if (priority) updates.priority = priority;
         if (assignedWorker !== undefined) updates.assignedWorker = assignedWorker;
         if (adminNotes !== undefined) updates.adminNotes = adminNotes;
+        if (photoBefore !== undefined) updates.photoBefore = photoBefore;
+        if (photoAfter !== undefined) updates.photoAfter = photoAfter;
         updates.updatedAt = new Date().toISOString();
 
         if (!mongooseReady()) {
@@ -243,12 +302,14 @@ router.patch('/:id/status', async (req, res, next) => {
 // PATCH /api/issues/:id/assign - admin assigns worker and sets priority
 router.patch('/:id/assign', async (req, res, next) => {
     try {
-        const { assignedWorker, priority, adminNotes, status } = req.body;
+        const { assignedWorker, priority, adminNotes, status, photoBefore, photoAfter } = req.body;
         const updates = { updatedAt: new Date().toISOString() };
         if (assignedWorker) updates.assignedWorker = assignedWorker;
         if (priority) updates.priority = priority;
         if (adminNotes !== undefined) updates.adminNotes = adminNotes;
         if (status) updates.status = status;
+        if (photoBefore !== undefined) updates.photoBefore = photoBefore;
+        if (photoAfter !== undefined) updates.photoAfter = photoAfter;
 
         let savedIssue;
 
