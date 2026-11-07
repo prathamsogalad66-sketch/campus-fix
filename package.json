@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client -- --host 0.0.0.0\"",
     "client": "npm run dev --prefix client -- --host 0.0.0.0",
-    "server": "npm run dev --prefix server"
+    "server": "npm run dev --prefix server",
+    "build": "cd client && npm install && npm run build",
+    "start": "node server/index.js"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

@@ -1,6 +1,35 @@
+const path = require('path');
+const fs = require('fs');
+const dataFilePath = path.join(__dirname, '../data/issues.json');
+
+function loadLocalIssues() {
+    try {
+        if (fs.existsSync(dataFilePath)) {
+            const data = fs.readFileSync(dataFilePath, 'utf8');
+            const parsed = JSON.parse(data);
+            if (Array.isArray(parsed)) return parsed;
+        }
+    } catch (e) {
+        console.error('Error loading local issues:', e);
+    }
+    return null;
+}
+
+function saveLocalIssues(data) {
+    try {
+        const dir = path.dirname(dataFilePath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(dataFilePath, JSON.stringify(data, null, 2), 'utf8');
+    } catch (e) {
+        console.error('Error saving local issues:', e);
+        throw e;
+    }
+}
 const express = require('express');
 const mongoose = require('mongoose');
 const Issue = require('../models/Issue');
+const WhatsAppDispatch = require('../models/WhatsAppDispatch');
+const { notifyWorkerAssignment, getWhatsAppUrl, extractWorkerName, WORKER_PHONES } = require('../utils/whatsapp');
 
 const router = express.Router();
 
@@ -86,6 +115,11 @@ let demoIssues = [
         updatedAt: new Date(Date.now() - 3600000).toISOString(),
     },
 ];
+// Load from disk if available
+const savedOnDisk = loadLocalIssues();
+if (savedOnDisk) demoIssues = savedOnDisk;
+else saveLocalIssues(demoIssues);
+
 
 const mongooseReady = () => mongoose.connection.readyState === 1;
 
@@ -145,6 +179,7 @@ router.post('/', async (req, res, next) => {
         if (!mongooseReady()) {
             const created = { ...newDoc, _id: `local-${Date.now()}` };
             demoIssues.unshift(created);
+            saveLocalIssues(demoIssues);
             return res.status(201).json(created);
         }
 
@@ -170,6 +205,7 @@ router.patch('/:id', async (req, res, next) => {
             const index = demoIssues.findIndex((i) => i._id === req.params.id);
             if (index === -1) return res.status(404).json({ message: 'Issue not found.' });
             demoIssues[index] = { ...demoIssues[index], ...updates };
+            saveLocalIssues(demoIssues);
             return res.json(demoIssues[index]);
         }
 
@@ -193,6 +229,7 @@ router.patch('/:id/status', async (req, res, next) => {
             if (index === -1) return res.status(404).json({ message: 'Issue not found.' });
             demoIssues[index].status = status;
             demoIssues[index].updatedAt = new Date().toISOString();
+            saveLocalIssues(demoIssues);
             return res.json(demoIssues[index]);
         }
         const issue = await Issue.findByIdAndUpdate(req.params.id, { status }, { new: true });
@@ -213,20 +250,92 @@ router.patch('/:id/assign', async (req, res, next) => {
         if (adminNotes !== undefined) updates.adminNotes = adminNotes;
         if (status) updates.status = status;
 
+        let savedIssue;
+
         if (!mongooseReady()) {
             const index = demoIssues.findIndex((i) => i._id === req.params.id);
             if (index === -1) return res.status(404).json({ message: 'Issue not found.' });
             demoIssues[index] = { ...demoIssues[index], ...updates };
-            return res.json(demoIssues[index]);
+            saveLocalIssues(demoIssues);
+            savedIssue = demoIssues[index];
+        } else {
+            const issue = await Issue.findByIdAndUpdate(req.params.id, updates, { new: true });
+            if (!issue) return res.status(404).json({ message: 'Issue not found.' });
+            savedIssue = issue;
         }
 
-        const issue = await Issue.findByIdAndUpdate(req.params.id, updates, { new: true });
-        if (!issue) return res.status(404).json({ message: 'Issue not found.' });
-        return res.json(issue);
+        let whatsappUrl = null;
+        let workerPhone = null;
+
+        if (assignedWorker && assignedWorker !== 'Unassigned') {
+            const workerName = extractWorkerName(savedIssue.assignedWorker);
+            workerPhone = WORKER_PHONES[workerName] || null;
+
+            if (workerPhone) {
+                whatsappUrl = getWhatsAppUrl(workerPhone, {
+                    issueTitle: savedIssue.title,
+                    location: savedIssue.location,
+                    priority: savedIssue.priority,
+                    adminNotes: savedIssue.adminNotes,
+                });
+            }
+
+            if (mongooseReady()) {
+                const dispatch = await WhatsAppDispatch.create({
+                    issueId: savedIssue._id,
+                    issueTitle: savedIssue.title,
+                    location: savedIssue.location,
+                    priority: savedIssue.priority,
+                    assignedWorker: savedIssue.assignedWorker,
+                    workerPhone: workerPhone || '',
+                    status: 'pending',
+                });
+
+                notifyWorkerAssignment({
+                    assignedWorker: savedIssue.assignedWorker,
+                    issueTitle: savedIssue.title,
+                    location: savedIssue.location,
+                    priority: savedIssue.priority,
+                    adminNotes: savedIssue.adminNotes,
+                })
+                    .then(async (result) => {
+                        const status = result.success
+                        ? 'accepted'
+                            : result.reasonCode === 'not_configured'
+                                ? 'link_generated'
+                                : 'failed';
+                        await WhatsAppDispatch.findByIdAndUpdate(dispatch._id, {
+                            status,
+                            providerMessageId: result.id || '',
+                            failureReason: status === 'failed' ? result.reason || 'WhatsApp message could not be sent.' : '',
+                        });
+                    })
+                    .catch((error) => {
+                        console.error('[WhatsApp] Could not update dispatch history:', error);
+                    });
+            } else {
+                notifyWorkerAssignment({
+                    assignedWorker: savedIssue.assignedWorker,
+                    issueTitle: savedIssue.title,
+                    location: savedIssue.location,
+                    priority: savedIssue.priority,
+                    adminNotes: savedIssue.adminNotes,
+                }).catch((error) => {
+                    console.error('[WhatsApp] Unexpected notification error:', error);
+                });
+            }
+        }
+
+        const responseData = savedIssue && savedIssue.toObject ? savedIssue.toObject() : { ...savedIssue };
+        if (whatsappUrl) responseData.whatsappUrl = whatsappUrl;
+        if (workerPhone) responseData.workerPhone = workerPhone;
+
+        return res.json(responseData);
     } catch (error) {
         next(error);
     }
 });
+
 
 // DELETE /api/issues/:id - remove issue
 router.delete('/:id', async (req, res, next) => {
@@ -235,6 +344,7 @@ router.delete('/:id', async (req, res, next) => {
             const index = demoIssues.findIndex((i) => i._id === req.params.id);
             if (index === -1) return res.status(404).json({ message: 'Issue not found.' });
             demoIssues.splice(index, 1);
+            saveLocalIssues(demoIssues);
             return res.json({ message: 'Issue deleted successfully.' });
         }
         const issue = await Issue.findByIdAndDelete(req.params.id);

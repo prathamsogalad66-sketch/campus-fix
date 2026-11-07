@@ -57,13 +57,60 @@ function checkAdminToken() {
 }
 
 const CAMPUS_WORKERS = [
-    { name: 'Ramesh Kumar', trade: 'Electrician', phone: '+91 98451 23401', icon: Zap },
+    { name: 'Ramesh Kumar', trade: 'Electrician', phone: '+91 8123751706', icon: Zap },
     { name: 'Suresh Patil', trade: 'Plumber', phone: '+91 98452 34512', icon: Droplets },
     { name: 'Anand Deshpande', trade: 'IT & Network Tech', phone: '+91 98453 45623', icon: Activity },
     { name: 'Kumar Naik', trade: 'Carpenter & Furniture', phone: '+91 98454 56734', icon: Wrench },
     { name: 'Sunita Hiremath', trade: 'Housekeeping & Sanitation', phone: '+91 98455 67845', icon: Sparkles },
     { name: 'Prakash Joshi', trade: 'Civil & Maintenance', phone: '+91 98456 78956', icon: Building },
 ]
+
+function getWorkerDetails(assignedWorkerString) {
+    if (!assignedWorkerString || assignedWorkerString === 'Unassigned') return null
+    return CAMPUS_WORKERS.find((w) => assignedWorkerString.includes(w.name)) || null
+}
+
+function buildWhatsAppUrl(workerPhone, issue, formOverrides = {}) {
+    const rawDigits = String(workerPhone || '').replace(/\D/g, '')
+    const targetPhone = rawDigits.startsWith('91') && rawDigits.length > 10 ? rawDigits : `91${rawDigits.replace(/^0+/, '')}`
+
+    const priority = formOverrides.priority || issue.priority || 'Medium'
+    const adminNotes = formOverrides.adminNotes !== undefined ? formOverrides.adminNotes : (issue.adminNotes || '')
+    const location = issue.location || 'SDMCET Campus'
+    const title = issue.title || 'Campus Issue'
+    const category = issue.category || 'General Maintenance'
+    const reporter = issue.reporter || 'Student'
+    const description = issue.description || ''
+
+    const priorityEmoji = {
+        Urgent: '🚨 URGENT',
+        High: '🔴 HIGH',
+        Medium: '🟡 MEDIUM',
+        Low: '🟢 LOW',
+    }[priority] || priority
+
+    const text = [
+        `🏫 *SDMCET CAMPUS FIX — WORK ORDER DISPATCH*`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `📍 *LOCATION:* ${location}`,
+        `🔧 *PROBLEM:* ${title}`,
+        `⚡ *PRIORITY:* ${priorityEmoji}`,
+        `📂 *TRADE/CATEGORY:* ${category}`,
+        `👤 *REPORTED BY:* ${reporter}`,
+        ``,
+        `📋 *PROBLEM DETAILS:*`,
+        `${description}`,
+        ``,
+        `📝 *ADMIN INSTRUCTIONS & NOTES:*`,
+        `${adminNotes || 'Please attend immediately and report completion to Estates Office.'}`,
+        `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+        `👉 *Action Required:* Please proceed to the location immediately and correct the problem.`,
+        `— SDMCET Estates & Maintenance Office`,
+    ].join('\n')
+
+    return `https://api.whatsapp.com/send?phone=${targetPhone}&text=${encodeURIComponent(text)}`
+}
+
 
 const CATEGORIES = [
     { name: 'Facilities', icon: Building2 },
@@ -182,7 +229,9 @@ function App() {
     const [showForm, setShowForm] = useState(false)
     const [mobileNav, setMobileNav] = useState(false)
     const [notice, setNotice] = useState('')
+    const [storageMode, setStorageMode] = useState('checking')
     const [saving, setSaving] = useState(false)
+    const [formError, setFormError] = useState('')
     const [form, setForm] = useState(initialForm)
 
     // Admin edit state
@@ -192,6 +241,8 @@ function App() {
         status: 'Open',
         adminNotes: '',
     })
+    const [dispatchSuccessModal, setDispatchSuccessModal] = useState(null)
+    const [autoNotifyWhatsApp, setAutoNotifyWhatsApp] = useState(true)
 
     const isStudent = user?.role === 'student'
     const isAdmin = user?.role === 'admin'
@@ -306,6 +357,13 @@ function App() {
 
     useEffect(() => {
         fetchIssues()
+        fetch(`${apiUrl}/health`)
+            .then((res) => {
+                if (!res.ok) throw new Error('Could not check the API storage status.')
+                return res.json()
+            })
+            .then((data) => setStorageMode(data.storageMode || 'mongodb'))
+            .catch(() => setStorageMode('unavailable'))
     }, [])
 
     // STRICT USER PRIVACY FILTER:
@@ -373,11 +431,51 @@ function App() {
 
     // Submit new problem
     const createIssue = async (e) => {
-        e.preventDefault()
+        if (e && e.preventDefault) e.preventDefault()
+        setFormError('')
+
+        // Explicit validation with clear user messaging
+        const titleTrimmed = form.title ? form.title.trim() : ''
+        const locationTrimmed = form.location ? form.location.trim() : ''
+        const descTrimmed = form.description ? form.description.trim() : ''
+
+        if (!titleTrimmed) {
+            setFormError('Please enter a problem title above.')
+            const el = document.getElementById('report-title-input')
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                el.focus()
+            }
+            return
+        }
+
+        if (!locationTrimmed) {
+            setFormError('Please enter the campus location.')
+            const el = document.getElementById('report-location-input')
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                el.focus()
+            }
+            return
+        }
+
+        if (!descTrimmed) {
+            setFormError('Please describe the problem details.')
+            const el = document.getElementById('report-desc-input')
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                el.focus()
+            }
+            return
+        }
+
         setSaving(true)
         try {
             const payload = {
                 ...form,
+                title: titleTrimmed,
+                location: locationTrimmed,
+                description: descTrimmed,
                 reporter: currentUser,
                 reporterEmail: currentEmail,
             }
@@ -393,10 +491,12 @@ function App() {
             setSelectedId(created._id)
             setShowForm(false)
             setForm(initialForm)
+            setFormError('')
             setActivePage('My reports')
             setActiveStatus('All')
             setNotice('Your problem has been registered! Admin will review and assign a technician.')
         } catch (error) {
+            setFormError(error.message || 'Failed to submit the issue. Please try again.')
             setNotice(error.message || 'Failed to submit the issue.')
         } finally {
             setSaving(false)
@@ -404,8 +504,8 @@ function App() {
     }
 
     // Admin save updates
-    const saveAdminAssignment = async (e) => {
-        if (e) e.preventDefault()
+    const saveAdminAssignment = async (e, options = {}) => {
+        if (e && e.preventDefault) e.preventDefault()
         if (!selectedIssue) return
         setSaving(true)
         try {
@@ -418,7 +518,31 @@ function App() {
             if (!res.ok) throw new Error(updated.message || 'Failed to update work assignment.')
 
             setIssues((curr) => curr.map((item) => (item._id === selectedIssue._id ? { ...item, ...updated } : item)))
-            setNotice(`Work updated: Priority set to ${adminForm.priority}, assigned to ${adminForm.assignedWorker}.`)
+
+            const assignedWorkerDetails = getWorkerDetails(adminForm.assignedWorker)
+            if (assignedWorkerDetails) {
+                const waUrl = updated.whatsappUrl || buildWhatsAppUrl(assignedWorkerDetails.phone, { ...selectedIssue, ...adminForm })
+
+                // Auto-open WhatsApp in a new tab/window
+                if (options.shouldOpenWhatsApp !== false && autoNotifyWhatsApp) {
+                    try {
+                        window.open(waUrl, '_blank')
+                    } catch (err) {
+                        console.warn('Could not auto-open WhatsApp:', err)
+                    }
+                }
+
+                // Show Dispatch Confirmation Modal with 1-click actions
+                setDispatchSuccessModal({
+                    worker: assignedWorkerDetails,
+                    issue: { ...selectedIssue, ...adminForm },
+                    whatsappUrl: waUrl,
+                })
+
+                setNotice(`Work updated! WhatsApp dispatch ticket generated for ${assignedWorkerDetails.name} (${assignedWorkerDetails.phone}).`)
+            } else {
+                setNotice(`Work updated: Priority set to ${adminForm.priority}, assigned to ${adminForm.assignedWorker}.`)
+            }
         } catch (error) {
             setNotice(error.message || 'Could not save assignment.')
         } finally {
@@ -752,6 +876,14 @@ function App() {
                 </header>
 
                 <div className="content">
+                    {storageMode === 'local' && (
+                        <div className="storage-warning" role="status">
+                            <AlertCircle size={17} />
+                            <span>
+                                MongoDB is unavailable. Reports are being saved on this server and will not sync to Atlas yet.
+                            </span>
+                        </div>
+                    )}
                     {notice && (
                         <div className="notice" role="status">
                             <span>{notice}</span>
@@ -1057,6 +1189,8 @@ function App() {
                                         onSaveAdmin={saveAdminAssignment}
                                         onDelete={deleteIssue}
                                         saving={saving}
+                                        autoNotifyWhatsApp={autoNotifyWhatsApp}
+                                        setAutoNotifyWhatsApp={setAutoNotifyWhatsApp}
                                     />
                                 </section>
                             </>
@@ -1096,6 +1230,17 @@ function App() {
                                             <span>
                                                 Completed: <strong style={{ color: '#4ade80' }}>{worker.completedTasks}</strong>
                                             </span>
+                                        </div>
+                                        <div style={{ marginTop: '8px' }}>
+                                            <a
+                                                href={`https://api.whatsapp.com/send?phone=${worker.phone.replace(/\D/g, '')}&text=${encodeURIComponent(`Hello ${worker.name}, this is SDMCET Estates Administration regarding campus maintenance.`)}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="whatsapp-btn"
+                                                style={{ padding: '6px 12px', fontSize: '11px' }}
+                                            >
+                                                📲 WhatsApp {worker.name.split(' ')[0]}
+                                            </a>
                                         </div>
 
                                         {/* Assigned issues list for this worker */}
@@ -1285,24 +1430,47 @@ function App() {
             {showForm && (
                 <div
                     className="modal-backdrop"
-                    onMouseDown={(e) => e.target === e.currentTarget && setShowForm(false)}
+                    onMouseDown={(e) => {
+                        if (e.target === e.currentTarget) {
+                            setShowForm(false)
+                            setFormError('')
+                        }
+                    }}
                 >
-                    <form className="report-modal" onSubmit={createIssue} style={{ maxWidth: '580px' }}>
+                    <form className="report-modal" onSubmit={createIssue} style={{ maxWidth: '580px' }} noValidate>
                         <div className="modal-head">
                             <div>
                                 <p className="eyebrow">CAMPUS FIX SERVICE DESK</p>
                                 <h2>Address a Campus Problem</h2>
                             </div>
-                            <button type="button" onClick={() => setShowForm(false)} aria-label="Close">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowForm(false)
+                                    setFormError('')
+                                }}
+                                aria-label="Close"
+                            >
                                 <X size={19} />
                             </button>
                         </div>
 
+                        {formError && (
+                            <div className="modal-error-alert" role="alert">
+                                <AlertCircle size={16} />
+                                <span>{formError}</span>
+                            </div>
+                        )}
+
                         <label>
                             Problem title
                             <input
+                                id="report-title-input"
                                 value={form.title}
-                                onChange={(e) => setForm({ ...form, title: e.target.value })}
+                                onChange={(e) => {
+                                    setForm({ ...form, title: e.target.value })
+                                    if (formError) setFormError('')
+                                }}
                                 placeholder="e.g. Broken water tap in C-Block washroom"
                                 required
                             />
@@ -1350,8 +1518,12 @@ function App() {
                         <label>
                             Location (Campus building, floor, room)
                             <input
+                                id="report-location-input"
                                 value={form.location}
-                                onChange={(e) => setForm({ ...form, location: e.target.value })}
+                                onChange={(e) => {
+                                    setForm({ ...form, location: e.target.value })
+                                    if (formError) setFormError('')
+                                }}
                                 placeholder="e.g. Mech Block, 2nd Floor, Room 204"
                                 required
                             />
@@ -1360,8 +1532,12 @@ function App() {
                         <label>
                             Detailed description
                             <textarea
+                                id="report-desc-input"
                                 value={form.description}
-                                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                                onChange={(e) => {
+                                    setForm({ ...form, description: e.target.value })
+                                    if (formError) setFormError('')
+                                }}
                                 placeholder="Describe the issue in detail to help the technician repair it..."
                                 rows="3"
                                 required
@@ -1387,10 +1563,107 @@ function App() {
                             </label>
                         </div>
 
-                        <button className="primary-button submit" type="submit" disabled={saving}>
-                            {saving ? 'Submitting to Queue...' : <><FilePlus2 size={17} /> Submit problem report</>}
+                        <button
+                            id="submit-problem-btn"
+                            className="submit-report-btn"
+                            type="submit"
+                            disabled={saving}
+                        >
+                            {saving ? (
+                                <>
+                                    <span className="btn-spinner" />
+                                    <span>Submitting report to campus desk...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <FilePlus2 size={18} strokeWidth={2.4} />
+                                    <span>Submit Problem Report</span>
+                                </>
+                            )}
                         </button>
                     </form>
+                </div>
+            )}
+
+            {/* ===================== WHATSAPP DISPATCH CONFIRMATION MODAL ===================== */}
+            {dispatchSuccessModal && (
+                <div
+                    className="modal-backdrop"
+                    onMouseDown={(e) => e.target === e.currentTarget && setDispatchSuccessModal(null)}
+                >
+                    <div className="report-modal whatsapp-success-modal" style={{ maxWidth: '520px', border: '1px solid #25d366' }}>
+                        <div className="modal-head">
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#25d366', display: 'grid', placeItems: 'center', color: '#fff' }}>
+                                    <Check size={18} strokeWidth={3} />
+                                </div>
+                                <div>
+                                    <p className="eyebrow" style={{ color: '#25d366' }}>DISPATCH SUCCESSFUL</p>
+                                    <h2 style={{ fontSize: '18px' }}>Task Allocated to Technician</h2>
+                                </div>
+                            </div>
+                            <button type="button" onClick={() => setDispatchSuccessModal(null)} aria-label="Close">
+                                <X size={19} />
+                            </button>
+                        </div>
+
+                        <div className="dispatch-summary-box">
+                            <div className="dispatch-summary-item">
+                                <span>Assigned Technician</span>
+                                <strong>👷 {dispatchSuccessModal.worker.name} ({dispatchSuccessModal.worker.trade})</strong>
+                            </div>
+                            <div className="dispatch-summary-item">
+                                <span>WhatsApp Phone</span>
+                                <strong style={{ color: '#25d366' }}>📱 {dispatchSuccessModal.worker.phone}</strong>
+                            </div>
+                            <div className="dispatch-summary-item">
+                                <span>Campus Location</span>
+                                <strong>📍 {dispatchSuccessModal.issue.location}</strong>
+                            </div>
+                            <div className="dispatch-summary-item">
+                                <span>Problem</span>
+                                <strong>🔧 {dispatchSuccessModal.issue.title}</strong>
+                            </div>
+                            <div className="dispatch-summary-item">
+                                <span>Priority</span>
+                                <strong style={{ color: '#f59e0b' }}>🚨 {dispatchSuccessModal.issue.priority}</strong>
+                            </div>
+                        </div>
+
+                        <p style={{ fontSize: '12.5px', color: '#c4cbba', marginTop: '12px', lineHeight: 1.5 }}>
+                            The complete work order ticket with exact location and instructions is ready. Click below to open WhatsApp and message <strong>{dispatchSuccessModal.worker.name}</strong> directly:
+                        </p>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '14px' }}>
+                            <a
+                                href={dispatchSuccessModal.whatsappUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="whatsapp-btn-large"
+                                onClick={() => setDispatchSuccessModal(null)}
+                            >
+                                <span>📲 Open WhatsApp & Send Work Order</span>
+                                <ArrowUpRight size={17} />
+                            </a>
+
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <a
+                                    href={`tel:${dispatchSuccessModal.worker.phone.replace(/\s+/g, '')}`}
+                                    className="call-worker-btn"
+                                >
+                                    <Phone size={15} /> Call {dispatchSuccessModal.worker.name.split(' ')[0]}
+                                </a>
+                                <button
+                                    type="button"
+                                    className="modal-secondary-btn"
+                                    onClick={() => setDispatchSuccessModal(null)}
+                                    style={{ flex: 1 }}
+                                >
+                                    Dismiss
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             )}
 
@@ -1424,8 +1697,18 @@ function IssueDetailsPanel({
     onSaveAdmin,
     onDelete,
     saving,
+    autoNotifyWhatsApp,
+    setAutoNotifyWhatsApp,
 }) {
     const [pendingDeleteId, setPendingDeleteId] = useState(null)
+    const [flowNotice, setFlowNotice] = useState('')
+
+    // Clear flow notice toast automatically
+    useEffect(() => {
+        if (!flowNotice) return
+        const timer = setTimeout(() => setFlowNotice(''), 3500)
+        return () => clearTimeout(timer)
+    }, [flowNotice])
 
     if (!issue) {
         return (
@@ -1445,10 +1728,88 @@ function IssueDetailsPanel({
         issue.reporter?.trim().toLowerCase() === user?.name?.trim().toLowerCase() ||
         issue.reporterEmail?.trim().toLowerCase() === user?.email?.trim().toLowerCase()
 
-    // Lifecycle steps
-    const hasWorker = issue.assignedWorker && issue.assignedWorker !== 'Unassigned'
-    const isResolved = issue.status === 'Resolved'
-    const isInProgress = issue.status === 'In progress' || isResolved
+    // Real-time values taking admin changes into account
+    const effectiveStatus = isAdmin ? (adminForm.status || issue.status) : issue.status
+    const effectivePriority = isAdmin ? (adminForm.priority || issue.priority) : issue.priority
+    const effectiveWorker = isAdmin ? (adminForm.assignedWorker || issue.assignedWorker) : issue.assignedWorker
+
+    const hasWorker = effectiveWorker && effectiveWorker !== 'Unassigned'
+    const isResolved = effectiveStatus === 'Resolved'
+    const isInProgress = effectiveStatus === 'In progress' || isResolved
+    const activeWorkerDetails = getWorkerDetails(adminForm.assignedWorker)
+    const assignedWorkerInfo = getWorkerDetails(effectiveWorker)
+
+    // Recommended technician based on issue category
+    const getRecommendedWorker = () => {
+        const cat = (issue.category || '').toLowerCase()
+        if (cat.includes('electr')) return CAMPUS_WORKERS.find(w => w.trade === 'Electrician') || CAMPUS_WORKERS[0]
+        if (cat.includes('plumb') || cat.includes('water')) return CAMPUS_WORKERS.find(w => w.trade === 'Plumber') || CAMPUS_WORKERS[1]
+        if (cat.includes('it') || cat.includes('network') || cat.includes('wi-fi')) return CAMPUS_WORKERS.find(w => w.trade.includes('IT')) || CAMPUS_WORKERS[2]
+        if (cat.includes('furnit') || cat.includes('carpent')) return CAMPUS_WORKERS.find(w => w.trade.includes('Carpenter')) || CAMPUS_WORKERS[3]
+        if (cat.includes('sanit') || cat.includes('clean') || cat.includes('housekeep')) return CAMPUS_WORKERS.find(w => w.trade.includes('Housekeeping')) || CAMPUS_WORKERS[4]
+        return CAMPUS_WORKERS.find(w => w.trade.includes('Civil')) || CAMPUS_WORKERS[0]
+    }
+    const recommendedWorker = getRecommendedWorker()
+
+    // Stepper calculation
+    const step1Done = true
+    const step2Done = Boolean(effectivePriority)
+    const step3Done = Boolean(hasWorker || isInProgress)
+    const step4Done = isResolved
+
+    const currentStepIndex = isResolved ? 4 : (hasWorker || effectiveStatus === 'In progress') ? 3 : 2
+    const progressPercent = isResolved ? 100 : (hasWorker || effectiveStatus === 'In progress') ? 75 : 50
+    const progressLabel = isResolved 
+        ? '100% Resolved' 
+        : effectiveStatus === 'In progress' 
+            ? '75% In Progress' 
+            : hasWorker 
+                ? '60% Dispatched' 
+                : '50% Under Review'
+
+    // Interactive step node click handlers
+    const handleStepClick = (stepNum) => {
+        if (!isAdmin) return
+        if (stepNum === 1) {
+            setAdminForm(prev => ({ ...prev, status: 'Open' }))
+            setFlowNotice('Stage set to Step 1: Open / Logged')
+        } else if (stepNum === 2) {
+            const nextPri = { Low: 'Medium', Medium: 'High', High: 'Urgent', Urgent: 'Low' }[adminForm.priority || 'Medium'] || 'Urgent'
+            setAdminForm(prev => ({ ...prev, priority: nextPri }))
+            setFlowNotice(`Stage 2 Priority cycled to ${nextPri}`)
+        } else if (stepNum === 3) {
+            if (!hasWorker) {
+                const rec = recommendedWorker
+                setAdminForm(prev => ({
+                    ...prev,
+                    assignedWorker: `${rec.name} (${rec.trade})`,
+                    status: prev.status === 'Open' ? 'In progress' : prev.status,
+                }))
+                setFlowNotice(`Auto-assigned ${rec.name} (${rec.trade})`)
+            } else {
+                setFlowNotice(`Technician: ${effectiveWorker}`)
+            }
+        } else if (stepNum === 4) {
+            const newSt = isResolved ? 'In progress' : 'Resolved'
+            setAdminForm(prev => ({ ...prev, status: newSt }))
+            setFlowNotice(`Stage set to Step 4: ${newSt}`)
+        }
+    }
+
+    const handleQuickSetStatus = (st) => {
+        setAdminForm(prev => ({ ...prev, status: st }))
+        setFlowNotice(`Status updated to "${st}"`)
+    }
+
+    const handleQuickAutoAssign = () => {
+        const rec = recommendedWorker
+        setAdminForm(prev => ({
+            ...prev,
+            assignedWorker: `${rec.name} (${rec.trade})`,
+            status: prev.status === 'Open' ? 'In progress' : prev.status,
+        }))
+        setFlowNotice(`Assigned ${rec.name} (${rec.trade})`)
+    }
 
     return (
         <aside className="detail-panel">
@@ -1473,43 +1834,190 @@ function IssueDetailsPanel({
                 </div>
             </div>
 
-            {/* VISUAL 4-STEP LIFECYCLE PROGRESS TRACKER */}
-            <div className="lifecycle-stepper">
-                <div className="stepper-header">
-                    <span>Resolution Lifecycle</span>
-                    <span style={{ color: '#efc15e', fontWeight: 700 }}>
-                        {isResolved ? '100% Completed' : isInProgress ? 'In Progress' : 'Under Review'}
-                    </span>
-                </div>
-                <div className="stepper-track">
-                    <div className="stepper-step completed">
-                        <div className="step-node">
-                            <Check size={14} />
-                        </div>
-                        <span className="step-title">Submitted</span>
+            {/* VISUAL INTERACTIVE LIFECYCLE FLOW CHART & PIPELINE */}
+            <div className="lifecycle-flowchart-card">
+                <div className="flowchart-header">
+                    <div className="flowchart-title-wrap">
+                        <span className="flowchart-kicker">WORKFLOW PIPELINE</span>
+                        <h4 className="flowchart-title">Resolution Lifecycle</h4>
                     </div>
-
-                    <div className={`stepper-step ${issue.priority || hasWorker ? 'completed' : 'current'}`}>
-                        <div className="step-node">
-                            {issue.priority ? <Check size={14} /> : '2'}
-                        </div>
-                        <span className="step-title">Priority Set</span>
-                    </div>
-
-                    <div className={`stepper-step ${hasWorker ? (isResolved ? 'completed' : 'current') : ''}`}>
-                        <div className="step-node">
-                            {hasWorker && isResolved ? <Check size={14} /> : '3'}
-                        </div>
-                        <span className="step-title">Technician</span>
-                    </div>
-
-                    <div className={`stepper-step ${isResolved ? 'completed' : ''}`}>
-                        <div className="step-node">
-                            {isResolved ? <Check size={14} /> : '4'}
-                        </div>
-                        <span className="step-title">Resolved</span>
+                    <div className={`flowchart-badge ${statusClass(effectiveStatus)}`}>
+                        <span className={`pulse-dot ${statusClass(effectiveStatus)}`} />
+                        <span>{progressLabel}</span>
                     </div>
                 </div>
+
+                {/* Animated Horizontal Progress Track */}
+                <div className="flowchart-progress-bar-bg">
+                    <div 
+                        className="flowchart-progress-bar-fill" 
+                        style={{ width: `${progressPercent}%` }} 
+                    />
+                </div>
+
+                {/* 4 Connected Flow Nodes (Working Buttons) */}
+                <div className="flowchart-steps-grid">
+                    {/* STEP 1: SUBMITTED */}
+                    <button
+                        type="button"
+                        className={`flow-step-node completed ${currentStepIndex === 1 ? 'current' : ''}`}
+                        onClick={() => handleStepClick(1)}
+                        title={isAdmin ? "Click to set status to Open" : "Report Submitted"}
+                    >
+                        <div className="flow-node-circle">
+                            <Check size={14} className="node-icon-check" />
+                        </div>
+                        <span className="flow-node-num">STEP 1</span>
+                        <strong className="flow-node-title">Submitted</strong>
+                        <span className="flow-node-sub">Logged</span>
+                    </button>
+
+                    <div className={`flow-connector-line ${step2Done ? 'active' : ''}`} />
+
+                    {/* STEP 2: PRIORITY */}
+                    <button
+                        type="button"
+                        className={`flow-step-node ${step2Done ? 'completed' : ''} ${currentStepIndex === 2 ? 'current' : ''}`}
+                        onClick={() => handleStepClick(2)}
+                        title={isAdmin ? `Click to cycle priority (Current: ${effectivePriority})` : `Priority: ${effectivePriority}`}
+                    >
+                        <div className="flow-node-circle">
+                            <span className="node-num-indicator">{effectivePriority ? <Zap size={13} /> : '2'}</span>
+                        </div>
+                        <span className="flow-node-num">STEP 2</span>
+                        <strong className="flow-node-title">Priority</strong>
+                        <span className={`flow-node-sub badge-priority ${String(effectivePriority).toLowerCase()}`}>
+                            {effectivePriority || 'Pending'}
+                        </span>
+                    </button>
+
+                    <div className={`flow-connector-line ${step3Done ? 'active' : ''}`} />
+
+                    {/* STEP 3: TECHNICIAN */}
+                    <button
+                        type="button"
+                        className={`flow-step-node ${step3Done ? 'completed' : ''} ${currentStepIndex === 3 ? 'current' : ''}`}
+                        onClick={() => handleStepClick(3)}
+                        title={isAdmin ? (hasWorker ? `Worker: ${effectiveWorker}` : `Click to auto-assign ${recommendedWorker.name}`) : "Technician Allocation"}
+                    >
+                        <div className="flow-node-circle">
+                            <span className="node-num-indicator">{step3Done ? <HardHat size={14} /> : '3'}</span>
+                        </div>
+                        <span className="flow-node-num">STEP 3</span>
+                        <strong className="flow-node-title">Technician</strong>
+                        <span className="flow-node-sub badge-worker">
+                            {hasWorker ? effectiveWorker.split(' ')[0] : 'Unassigned'}
+                        </span>
+                    </button>
+
+                    <div className={`flow-connector-line ${step4Done ? 'active' : ''}`} />
+
+                    {/* STEP 4: RESOLVED */}
+                    <button
+                        type="button"
+                        className={`flow-step-node ${step4Done ? 'completed' : ''} ${currentStepIndex === 4 ? 'current' : ''}`}
+                        onClick={() => handleStepClick(4)}
+                        title={isAdmin ? (isResolved ? "Click to reopen ticket" : "Click to mark as resolved") : "Final Resolution"}
+                    >
+                        <div className="flow-node-circle">
+                            <span className="node-num-indicator">{step4Done ? <Check size={14} /> : '4'}</span>
+                        </div>
+                        <span className="flow-node-num">STEP 4</span>
+                        <strong className="flow-node-title">Resolved</strong>
+                        <span className={`flow-node-sub ${step4Done ? 'badge-resolved' : ''}`}>
+                            {step4Done ? 'Verified' : 'Pending'}
+                        </span>
+                    </button>
+                </div>
+
+                {/* Instant Feedback Pill if clicked */}
+                {flowNotice && (
+                    <div className="flowchart-notice-banner">
+                        <Sparkles size={13} />
+                        <span>{flowNotice}</span>
+                    </div>
+                )}
+
+                {/* DEDICATED WORKING BUTTONS ON THE FLOW CHART */}
+                {isAdmin ? (
+                    <div className="flowchart-actions-toolbar">
+                        <div className="flow-actions-label">
+                            <Wrench size={12} />
+                            <span>FLOW CONTROLS:</span>
+                        </div>
+                        <div className="flow-actions-row">
+                            {/* In Progress Button */}
+                            <button
+                                type="button"
+                                className={`flow-action-btn progress ${effectiveStatus === 'In progress' ? 'is-active' : ''}`}
+                                onClick={() => handleQuickSetStatus('In progress')}
+                                title="Advance workflow to In progress"
+                            >
+                                <Zap size={13} />
+                                <span>{effectiveStatus === 'In progress' ? 'In Progress' : 'Set In Progress'}</span>
+                            </button>
+
+                            {/* Auto-Assign Worker or WhatsApp Button */}
+                            {!hasWorker ? (
+                                <button
+                                    type="button"
+                                    className="flow-action-btn worker"
+                                    onClick={handleQuickAutoAssign}
+                                    title={`Assign specialized ${recommendedWorker.trade}`}
+                                >
+                                    <HardHat size={13} />
+                                    <span>Assign {recommendedWorker.name.split(' ')[0]}</span>
+                                </button>
+                            ) : (
+                                <a
+                                    href={buildWhatsAppUrl(assignedWorkerInfo?.phone || activeWorkerDetails?.phone || recommendedWorker.phone, issue, adminForm)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flow-action-btn whatsapp"
+                                    title="Open WhatsApp chat with worker immediately"
+                                >
+                                    <span>📲 Worker WhatsApp</span>
+                                </a>
+                            )}
+
+                            {/* Mark Resolved or Reopen Button */}
+                            {!isResolved ? (
+                                <button
+                                    type="button"
+                                    className="flow-action-btn resolve"
+                                    onClick={() => handleQuickSetStatus('Resolved')}
+                                    title="Mark issue as completely fixed and resolved"
+                                >
+                                    <CheckCircle2 size={13} />
+                                    <span>Mark Resolved</span>
+                                </button>
+                            ) : (
+                                <button
+                                    type="button"
+                                    className="flow-action-btn reopen"
+                                    onClick={() => handleQuickSetStatus('In progress')}
+                                    title="Reopen this issue for further maintenance"
+                                >
+                                    <RefreshCw size={13} />
+                                    <span>Reopen Issue</span>
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                ) : (
+                    <div className="flowchart-student-status-box">
+                        <div className="student-status-row">
+                            <Clock3 size={13} />
+                            <span>
+                                {isResolved
+                                    ? 'Estates Office verified this issue as resolved.'
+                                    : hasWorker
+                                        ? `Campus technician ${issue.assignedWorker} is assigned and on campus.`
+                                        : 'Awaiting technician assignment from Estates & Maintenance.'}
+                            </span>
+                        </div>
+                    </div>
+                )}
             </div>
 
             <div className="detail-tags">
@@ -1538,8 +2046,21 @@ function IssueDetailsPanel({
                     <dt>ASSIGNED WORKER</dt>
                     <dd style={{ color: hasWorker ? '#efc15e' : '#9fa691', fontWeight: hasWorker ? 700 : 500 }}>
                         {hasWorker ? (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                                <HardHat size={14} /> {issue.assignedWorker}
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                    <HardHat size={14} /> {issue.assignedWorker}
+                                </span>
+                                {isAdmin && assignedWorkerInfo && (
+                                    <a
+                                        href={buildWhatsAppUrl(assignedWorkerInfo.phone, issue)}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="whatsapp-quick-chip"
+                                        title="Open WhatsApp chat with worker"
+                                    >
+                                        📲 WhatsApp ({assignedWorkerInfo.phone})
+                                    </a>
+                                )}
                             </span>
                         ) : (
                             'Unassigned'
@@ -1612,7 +2133,7 @@ function IssueDetailsPanel({
                                 <button
                                     type="button"
                                     key={st}
-                                    className={`status-segment-btn ${adminForm.status === st ? 'active' : ''}`}
+                                    className={`status-segment-btn ${statusClass(st)} ${adminForm.status === st ? 'active' : ''}`}
                                     onClick={() => setAdminForm({ ...adminForm, status: st })}
                                 >
                                     <span className={`pulse-dot ${statusClass(st)}`} />
@@ -1636,6 +2157,46 @@ function IssueDetailsPanel({
                                 </option>
                             ))}
                         </select>
+
+                        {/* Direct WhatsApp Worker Dispatch Box */}
+                        {activeWorkerDetails && (
+                            <div className="whatsapp-dispatch-card">
+                                <div className="whatsapp-dispatch-card-head">
+                                    <span className="whatsapp-badge">
+                                        <span className="pulse-dot active" style={{ background: '#25d366', boxShadow: '0 0 8px #25d366' }} />
+                                        WhatsApp Instant Dispatch
+                                    </span>
+                                    <span className="whatsapp-phone-display">📱 {activeWorkerDetails.phone}</span>
+                                </div>
+                                <p className="whatsapp-card-desc">
+                                    When allocated, <strong>{activeWorkerDetails.name}</strong> ({activeWorkerDetails.trade}) will be notified with the problem, location, urgency, and instructions directly on his WhatsApp.
+                                </p>
+
+                                <div className="whatsapp-ticket-preview">
+                                    <div className="preview-line"><span>📍 Location:</span> <strong>{issue.location}</strong></div>
+                                    <div className="preview-line"><span>🔧 Problem:</span> <strong>{issue.title}</strong></div>
+                                    <div className="preview-line"><span>⚡ Priority:</span> <strong>{adminForm.priority} Priority</strong></div>
+                                </div>
+
+                                <a
+                                    href={buildWhatsAppUrl(activeWorkerDetails.phone, issue, adminForm)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="whatsapp-btn"
+                                >
+                                    📲 Open WhatsApp & Dispatch Work Order Now
+                                </a>
+
+                                <label className="whatsapp-auto-toggle">
+                                    <input
+                                        type="checkbox"
+                                        checked={autoNotifyWhatsApp}
+                                        onChange={(e) => setAutoNotifyWhatsApp && setAutoNotifyWhatsApp(e.target.checked)}
+                                    />
+                                    <span>Immediately open WhatsApp to notify worker upon clicking Save</span>
+                                </label>
+                            </div>
+                        )}
                     </div>
 
                     {/* 4. ADMIN WORK NOTES / REMARKS */}
@@ -1652,6 +2213,10 @@ function IssueDetailsPanel({
                     <button className="admin-save-btn" type="submit" disabled={saving}>
                         {saving ? (
                             'Saving changes...'
+                        ) : activeWorkerDetails ? (
+                            <>
+                                <CheckCircle2 size={15} /> Save & Dispatch to {activeWorkerDetails.name.split(' ')[0]} via WhatsApp 📲
+                            </>
                         ) : (
                             <>
                                 <CheckCircle2 size={15} /> Save Priority & Worker Allocation
