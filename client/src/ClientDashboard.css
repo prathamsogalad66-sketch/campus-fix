@@ -4220,3 +4220,68 @@ body {
 .status-segment-btn .pulse-dot {
     flex-shrink: 0;
 }
+
+/* SEPARATE ADMIN ACTION BUTTONS: SAVE & DISPATCH */
+.admin-action-btn-group {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    margin-top: 14px;
+}
+
+.admin-save-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    width: 100%;
+    min-height: 42px;
+    padding: 10px 14px;
+    border-radius: 7px;
+    background: #343c22;
+    border: 1px solid #6b823e;
+    color: #f1fbe5;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.admin-save-btn:hover:not(:disabled) {
+    background: #465529;
+    border-color: #8da955;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.admin-save-btn:disabled {
+    opacity: 0.65;
+    cursor: wait;
+}
+
+.admin-dispatch-whatsapp-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 42px;
+    padding: 10px 14px;
+    border-radius: 7px;
+    background: linear-gradient(135deg, #25D366 0%, #1da851 100%);
+    border: 1px solid #2ae06f;
+    color: #ffffff !important;
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(37, 211, 102, 0.28);
+    transition: all 0.2s ease;
+}
+
+.admin-dispatch-whatsapp-btn:hover {
+    background: linear-gradient(135deg, #2bf074 0%, #20b859 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(37, 211, 102, 0.42);
+    color: #ffffff !important;
+}

@@ -2210,19 +2210,37 @@ function IssueDetailsPanel({
                         />
                     </div>
 
-                    <button className="admin-save-btn" type="submit" disabled={saving}>
-                        {saving ? (
-                            'Saving changes...'
-                        ) : activeWorkerDetails ? (
-                            <>
-                                <CheckCircle2 size={15} /> Save & Dispatch to {activeWorkerDetails.name.split(' ')[0]} via WhatsApp 📲
-                            </>
-                        ) : (
-                            <>
-                                <CheckCircle2 size={15} /> Save Priority & Worker Allocation
-                            </>
+                    {/* SEPARATE BUTTONS FOR SAVE AND DISPATCH */}
+                    <div className="admin-action-btn-group">
+                        <button
+                            className="admin-save-btn"
+                            type="button"
+                            onClick={(e) => onSaveAdmin(e, { shouldOpenWhatsApp: false })}
+                            disabled={saving}
+                        >
+                            {saving ? (
+                                'Saving changes...'
+                            ) : (
+                                <>
+                                    <CheckCircle2 size={15} /> Save Changes
+                                </>
+                            )}
+                        </button>
+
+                        {activeWorkerDetails && (
+                            <a
+                                href={buildWhatsAppUrl(activeWorkerDetails.phone, issue, adminForm)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="admin-dispatch-whatsapp-btn"
+                                onClick={() => {
+                                    onSaveAdmin(null, { shouldOpenWhatsApp: false })
+                                }}
+                            >
+                                <span>📲</span> Dispatch to {activeWorkerDetails.name.split(' ')[0]} via WhatsApp
+                            </a>
                         )}
-                    </button>
+                    </div>
                 </form>
             ) : (
                 <div style={{ marginTop: '16px', padding: '12px', background: '#171912', borderRadius: '6px', border: '1px solid #2b301f', fontSize: '12px', color: '#9da38e' }}>
