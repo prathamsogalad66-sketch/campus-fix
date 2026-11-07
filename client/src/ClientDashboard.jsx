@@ -1225,15 +1225,10 @@ function App() {
                                                         {issue.priority}
                                                     </span>
 
-                                                    <button
-                                                        type="button"
-                                                        className="issue-votes-btn"
-                                                        onClick={(e) => handleUpvote(issue._id, e)}
-                                                        title="Click to endorse / Me Too (+1 affected student)"
-                                                    >
-                                                        <ThumbsUp size={12} />
-                                                        <span>{issue.votes || 0}</span>
-                                                    </button>
+                                                    <span className="issue-votes">
+                                                        <ArrowUpRight size={14} />
+                                                        {issue.votes || 0}
+                                                    </span>
                                                 </button>
                                             ))}
 
@@ -2235,26 +2230,6 @@ function IssueDetailsPanel({
                         )}
                     </div>
                 </div>
-            </div>
-
-            {/* "ME TOO / UPVOTE" DUPLICATE SUPPRESSION CARD */}
-            <div className="upvote-card">
-                <div className="upvote-info">
-                    <div className="upvote-count-title">
-                        <ThumbsUp size={15} style={{ color: '#efc15e' }} />
-                        <strong>{issue.votes || 0} Affected Student{issue.votes === 1 ? '' : 's'}</strong>
-                    </div>
-                    <p>Facing this same campus issue? Upvote to notify estates maintenance without filing duplicate tickets.</p>
-                </div>
-                <button
-                    type="button"
-                    className="upvote-btn-active"
-                    onClick={(e) => onUpvote && onUpvote(issue._id, e)}
-                    title="Endorse this report (+1 student affected)"
-                >
-                    <ThumbsUp size={14} />
-                    <span>Me Too (+1)</span>
-                </button>
             </div>
 
             <dl className="detail-meta">
