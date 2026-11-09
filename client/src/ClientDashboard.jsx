@@ -848,32 +848,61 @@ function App() {
 
                         {/* Search toggle */}
                         {searchOpen && (
-                            <label className="search-field">
-                                <Search size={16} />
-                                <input
-                                    autoFocus
-                                    value={search}
-                                    onChange={(e) => setSearch(e.target.value)}
-                                    placeholder={
-                                        isStudent
-                                            ? 'Search your reports...'
-                                            : 'Search all campus reports, students, workers...'
-                                    }
-                                />
-                                <button
-                                    onClick={() => {
-                                        setSearch('')
-                                        setSearchOpen(false)
-                                    }}
-                                    aria-label="Close search"
-                                >
-                                    <X size={15} />
-                                </button>
-                            </label>
+                            <div className="search-container">
+                                <label className="search-field">
+                                    <Search size={16} />
+                                    <input
+                                        autoFocus
+                                        value={search}
+                                        onChange={(e) => setSearch(e.target.value)}
+                                        placeholder={
+                                            isStudent
+                                                ? 'Search your reports...'
+                                                : 'Search all campus reports, students, workers...'
+                                        }
+                                    />
+                                    <button
+                                        onClick={() => {
+                                            setSearch('')
+                                            setSearchOpen(false)
+                                        }}
+                                        aria-label="Close search"
+                                    >
+                                        <X size={15} />
+                                    </button>
+                                </label>
+                                {search.trim() && (
+                                    <div className="search-results" role="status">
+                                        <strong>
+                                            {visibleIssues.length
+                                                ? `${visibleIssues.length} matching report${visibleIssues.length === 1 ? '' : 's'}`
+                                                : `No reports found for "${search.trim()}"`}
+                                        </strong>
+                                        {visibleIssues.slice(0, 5).map((issue) => (
+                                            <button
+                                                key={issue._id}
+                                                onClick={() => {
+                                                    setSelectedId(issue._id)
+                                                    setSearch('')
+                                                    setSearchOpen(false)
+                                                    navigate(isStudent ? 'My reports' : 'All issues register')
+                                                }}
+                                            >
+                                                <span>{issue.title}</span>
+                                                <small>{issue.category} · {issue.location}</small>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         )}
                         <button
                             className={`icon-button ${searchOpen ? 'action-active' : ''}`}
-                            onClick={() => setSearchOpen((open) => !open)}
+                            onClick={() => {
+                                setSearchOpen((open) => !open)
+                                setShowNotifications(false)
+                                setShowProfileMenu(false)
+                            }}
                             aria-label="Search"
                         >
                             <Search size={19} />

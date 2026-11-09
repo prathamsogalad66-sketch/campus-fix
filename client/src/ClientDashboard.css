@@ -334,6 +334,10 @@ select:focus-visible {
     background: #fff;
 }
 
+.search-container {
+    position: relative;
+}
+
 .search-field input {
     width: 100%;
     min-width: 0;
@@ -341,6 +345,59 @@ select:focus-visible {
     outline: 0;
     color: var(--ink);
     font-size: 11px;
+}
+
+.search-results {
+    position: absolute;
+    z-index: 10;
+    top: calc(100% + 8px);
+    right: 0;
+    width: min(340px, 42vw);
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--ink);
+    background: var(--surface);
+    box-shadow: 0 16px 40px #00000045;
+}
+
+.search-results > strong {
+    display: block;
+    padding: 12px 14px;
+    font-size: 12px;
+}
+
+.search-results > button {
+    width: 100%;
+    display: block;
+    padding: 10px 14px;
+    border: 0;
+    border-top: 1px solid var(--line);
+    color: var(--ink);
+    background: transparent;
+    text-align: left;
+}
+
+.search-results > button:hover {
+    background: #ffffff0d;
+}
+
+.search-results > button span,
+.search-results > button small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.search-results > button span {
+    font-size: 12px;
+}
+
+.search-results > button small {
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 10px;
 }
 
 .search-field button {
@@ -1476,6 +1533,16 @@ tbody tr.row-selected td {
         left: 12px;
         width: calc(100vw - 24px);
         box-shadow: 0 5px 20px #1d49351a;
+    }
+
+    .search-container {
+        position: static;
+    }
+
+    .search-results {
+        top: 108px;
+        right: 12px;
+        width: calc(100vw - 24px);
     }
 
     .section-head {
