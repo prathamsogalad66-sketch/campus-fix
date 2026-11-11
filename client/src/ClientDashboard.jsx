@@ -46,7 +46,10 @@ import {
 } from 'lucide-react'
 import './ClientDashboard.css'
 
-const apiUrl = import.meta.env.VITE_API_URL || '/api'
+const configuredApiUrl = import.meta.env.VITE_API_URL?.trim().replace(/\/+$/, '')
+const apiUrl = configuredApiUrl
+    ? `${configuredApiUrl.replace(/\/api$/i, '')}/api`
+    : '/api'
 
 // Master passcodes for admin access (only known to the administrator)
 const MASTER_ADMIN_PASSCODES = ['sdm@admin2026', 'admin123', 'admin@sdmcet']
@@ -61,11 +64,11 @@ function checkAdminToken() {
 
 const CAMPUS_WORKERS = [
     { name: 'Ramesh Kumar', trade: 'Electrician', phone: '+91 8123751706', icon: Zap },
-    { name: 'Suresh Patil', trade: 'Plumber', phone: '+91 98452 34512', icon: Droplets },
+    { name: 'Suresh Patil', trade: 'Plumber', phone: '+91 77953 69555', icon: Droplets },
     { name: 'Anand Deshpande', trade: 'IT & Network Tech', phone: '+91 98453 45623', icon: Activity },
     { name: 'Kumar Naik', trade: 'Carpenter & Furniture', phone: '+91 98454 56734', icon: Wrench },
     { name: 'Sunita Hiremath', trade: 'Housekeeping & Sanitation', phone: '+91 98455 67845', icon: Sparkles },
-    { name: 'Prakash Joshi', trade: 'Civil & Maintenance', phone: '+91 98456 78956', icon: Building },
+    { name: 'Prakash Joshi', trade: 'Civil & Maintenance', phone: '+91 63660 21757', icon: Building },
 ]
 
 function getWorkerDetails(assignedWorkerString) {

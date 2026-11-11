@@ -21,11 +21,11 @@ const https = require('https');
 // Format: E.164 without the '+' sign (Green API uses countryCode+number, e.g. 919845123456)
 const WORKER_PHONES = {
     'Ramesh Kumar': process.env.WORKER_RAMESH_PHONE || '918123751706',
-    'Suresh Patil': process.env.WORKER_SURESH_PHONE || '919845234512',
+    'Suresh Patil': process.env.WORKER_SURESH_PHONE || '917795369555',
     'Anand Deshpande': process.env.WORKER_ANAND_PHONE || '919845345623',
     'Kumar Naik': process.env.WORKER_KUMAR_PHONE || '919845456734',
     'Sunita Hiremath': process.env.WORKER_SUNITA_PHONE || '919845567845',
-    'Prakash Joshi': process.env.WORKER_PRAKASH_PHONE || '919845678956',
+    'Prakash Joshi': process.env.WORKER_PRAKASH_PHONE || '916366021757',
 };
 
 /**
