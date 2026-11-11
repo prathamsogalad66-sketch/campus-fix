@@ -12,6 +12,25 @@ A MERN issue reporting dashboard for campus communities.
 
 The API uses local JSON storage when `MONGODB_URI` is absent or MongoDB cannot be reached. Reports submitted in this mode are saved to `server/data/issues.json` on this server and are not synced to Atlas. The dashboard displays a warning while local storage is active. Check `GET /api/health` for the current `storageMode`.
 
+## Deploy the frontend to Vercel
+
+The frontend is the Vite/React application in `client/`. The Express API, MongoDB connection, and server-side integrations remain on Render.
+
+1. Import this repository into Vercel and set **Root Directory** to `client`.
+2. Use the Vite framework preset, `npm run build` as the build command, and `dist` as the output directory. Vercel will install the dependencies from `client/package-lock.json`.
+3. Set the Vercel environment variable `VITE_API_URL` to the full Render API base URL, including `/api` and with no trailing slash, for example `https://your-render-service.onrender.com/api`. This value is public frontend configuration, not a secret.
+4. Set the variable for Production and any Preview environments that should call the API, then deploy the frontend.
+
+`client/vercel.json` provides the SPA fallback for direct page loads. The Vite development server continues to proxy `/api` to localhost when `VITE_API_URL` is unset, so local development does not require the Render URL.
+
+The current Render API CORS configuration already allows Vercel `*.vercel.app` origins, including preview deployments. No backend code or Render setting needs to change for the default Vercel domain. If using a custom Vercel domain, configure Render's `CLIENT_URL` to that exact HTTPS origin. Before changing it, check whether the existing Render frontend uses a separate custom origin, because `CLIENT_URL` is a single exact origin; preserve any existing production access that still needs it. The API does not use cookie sessions, so cross-origin cookie settings are not required.
+
+Keep `MONGODB_URI`, `MONGODB_DATABASE`, and any WhatsApp/provider credentials on Render only. Do not add them to Vercel; `VITE_*` values are included in browser-visible frontend code. The frontend sends API requests and base64-encoded photos directly to Render, where the existing API JSON body limit is 15 MB.
+
+The existing admin passcodes are hardcoded in the frontend source and therefore visible to anyone who can load the app. This Vercel setup does not add or expose server credentials, but it also does not make the current admin check secure. Before relying on admin access for a public production app, move credential verification to the Render API and rotate the existing passcodes; that authentication change is intentionally outside this hosting-only update.
+
+This setup does not change or redeploy the existing Render service. Its current static frontend fallback is left intact for compatibility; the separate Vercel frontend is built from `client/`.
+
 To enable MongoDB Atlas persistence:
 
 1. Copy `server/.env.example` to `server/.env`.
