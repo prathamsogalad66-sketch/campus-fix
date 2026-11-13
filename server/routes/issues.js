@@ -31,6 +31,7 @@ const Issue = require('../models/Issue');
 const WhatsAppDispatch = require('../models/WhatsAppDispatch');
 const { notifyWorkerAssignment, getWhatsAppUrl, extractWorkerName, WORKER_PHONES } = require('../utils/whatsapp');
 const { createCompletionAction, hashCompletionToken, isValidCompletionAction } = require('../utils/completionAction');
+const { validateCompletionPhoto } = require('../utils/completionPhoto');
 
 const router = express.Router();
 
@@ -133,6 +134,7 @@ function completionIssueSummary(issue) {
         status: issue.status,
         completedAt: issue.completedAt,
         completedBy: issue.completedBy,
+        photoAfter: issue.photoAfter || '',
         workerProgressAt: issue.workerProgressAt,
         workerProgressMessage: issue.workerProgressMessage,
         updatedAt: issue.updatedAt,
@@ -420,6 +422,9 @@ router.post('/:id/completion-action', async (req, res, next) => {
 
         const issue = await findIssueWithCompletionAction(req.params.id);
         const token = req.body?.token;
+        const photoAfter = req.body?.photoAfter;
+        const photoError = validateCompletionPhoto(photoAfter);
+        if (photoError) return res.status(400).json({ message: photoError });
         const error = completionActionError(issue, token);
         if (error) return res.status(issue ? 403 : 404).json({ message: error });
 
@@ -440,6 +445,7 @@ router.post('/:id/completion-action', async (req, res, next) => {
                         status: 'Resolved',
                         completedAt,
                         completedBy: extractWorkerName(issue.assignedWorker),
+                        ...(photoAfter ? { photoAfter } : {}),
                         completionActionUsedAt: completedAt,
                         updatedAt: completedAt,
                     },
@@ -459,6 +465,7 @@ router.post('/:id/completion-action', async (req, res, next) => {
                 status: 'Resolved',
                 completedAt,
                 completedBy: extractWorkerName(issue.assignedWorker),
+                ...(photoAfter ? { photoAfter } : {}),
                 completionActionUsedAt: completedAt,
                 updatedAt: completedAt,
             };

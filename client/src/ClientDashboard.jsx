@@ -2868,6 +2868,9 @@ function WorkerCompletionAction({ action }) {
     const [phase, setPhase] = useState('loading')
     const [issue, setIssue] = useState(null)
     const [error, setError] = useState('')
+    const [proofPhoto, setProofPhoto] = useState('')
+    const [photoError, setPhotoError] = useState('')
+    const [photoLoading, setPhotoLoading] = useState(false)
 
     useEffect(() => {
         let cancelled = false
@@ -2895,7 +2898,7 @@ function WorkerCompletionAction({ action }) {
         }
     }, [action])
 
-    const submitAction = async (endpoint, nextPhase) => {
+    const submitAction = async (endpoint, nextPhase, photoAfter) => {
         setError('')
         setPhase('submitting')
         try {
@@ -2903,7 +2906,10 @@ function WorkerCompletionAction({ action }) {
             const response = await fetch(`${apiUrl}/issues/${encodeURIComponent(action.issueId)}${actionPath}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token: action.token }),
+                body: JSON.stringify({
+                    token: action.token,
+                    ...(photoAfter ? { photoAfter } : {}),
+                }),
             })
             const data = await response.json()
             if (!response.ok) throw new Error(data.message || 'Could not update this task.')
@@ -2915,7 +2921,7 @@ function WorkerCompletionAction({ action }) {
         }
     }
 
-    const markCompleted = () => submitAction('', 'completed')
+    const markCompleted = () => submitAction('', 'completed', proofPhoto)
     const reportInProgress = () => submitAction('progress', 'progress')
 
     return (
@@ -2962,12 +2968,61 @@ function WorkerCompletionAction({ action }) {
                                     ? 'The admin has been notified. The task remains in progress; you can mark it complete when finished.'
                                     : 'Choose “Still takes time” if you are continuing the work, or mark it complete when finished.'}
                         </p>
+                        {['ready', 'progress'].includes(phase) && (
+                            <div className="worker-proof-upload">
+                                <div className="worker-proof-heading">
+                                    <strong><Camera size={16} /> Add a completion photo</strong>
+                                    <span>Optional</span>
+                                </div>
+                                {proofPhoto ? (
+                                    <div className="worker-proof-preview">
+                                        <img src={proofPhoto} alt="Completion proof preview" />
+                                        <button
+                                            type="button"
+                                            className="worker-proof-remove"
+                                            onClick={() => {
+                                                setProofPhoto('')
+                                                setPhotoError('')
+                                            }}
+                                        >
+                                            <X size={14} /> Remove photo
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <label className="worker-proof-picker">
+                                        <input
+                                            type="file"
+                                            accept="image/jpeg,image/png,image/webp"
+                                            capture="environment"
+                                            onChange={async (event) => {
+                                                const file = event.target.files?.[0]
+                                                event.target.value = ''
+                                                if (!file) return
+                                                setPhotoError('')
+                                                setPhotoLoading(true)
+                                                try {
+                                                    setProofPhoto(await compressImage(file))
+                                                } catch (photoRequestError) {
+                                                    setPhotoError(photoRequestError.message || 'Could not process this photo.')
+                                                } finally {
+                                                    setPhotoLoading(false)
+                                                }
+                                            }}
+                                        />
+                                        <Camera size={20} />
+                                        <span>{photoLoading ? 'Preparing photo…' : 'Take or choose a photo'}</span>
+                                        <small>JPEG, PNG, or WebP · up to 8 MB</small>
+                                    </label>
+                                )}
+                                {photoError && <p className="worker-proof-error" role="alert">{photoError}</p>}
+                            </div>
+                        )}
                     </>
                 ) : null}
 
                 {phase === 'ready' && (
                     <div className="worker-completion-actions">
-                        <button className="worker-completion-button" type="button" onClick={markCompleted}>
+                        <button className="worker-completion-button" type="button" onClick={markCompleted} disabled={photoLoading}>
                             <CheckCircle2 size={18} />
                             Mark as Completed
                             <ArrowRight size={17} />
@@ -2978,7 +3033,7 @@ function WorkerCompletionAction({ action }) {
                     </div>
                 )}
                 {phase === 'progress' && (
-                    <button className="worker-completion-button" type="button" onClick={markCompleted}>
+                    <button className="worker-completion-button" type="button" onClick={markCompleted} disabled={photoLoading}>
                         <CheckCircle2 size={18} />
                         Mark as Completed
                         <ArrowRight size={17} />
