@@ -30,6 +30,7 @@ const mongoose = require('mongoose');
 const Issue = require('../models/Issue');
 const WhatsAppDispatch = require('../models/WhatsAppDispatch');
 const { notifyWorkerAssignment, getWhatsAppUrl, extractWorkerName, WORKER_PHONES } = require('../utils/whatsapp');
+const { createCompletionAction, hashCompletionToken, isValidCompletionAction } = require('../utils/completionAction');
 
 const router = express.Router();
 
@@ -122,6 +123,46 @@ else saveLocalIssues(demoIssues);
 
 
 const mongooseReady = () => mongoose.connection.readyState === 1;
+
+function completionIssueSummary(issue) {
+    return {
+        _id: String(issue._id),
+        title: issue.title,
+        location: issue.location,
+        assignedWorker: issue.assignedWorker,
+        status: issue.status,
+        completedAt: issue.completedAt,
+        completedBy: issue.completedBy,
+        workerProgressAt: issue.workerProgressAt,
+        workerProgressMessage: issue.workerProgressMessage,
+        updatedAt: issue.updatedAt,
+    };
+}
+
+async function findIssueWithCompletionAction(id) {
+    if (mongooseReady()) {
+        if (!mongoose.isValidObjectId(id)) return null;
+        return Issue.findById(id).select(
+            '+completionActionTokenHash +completionActionWorker +completionActionExpiresAt +completionActionUsedAt'
+        );
+    }
+    return demoIssues.find((issue) => String(issue._id) === String(id)) || null;
+}
+
+function emitWorkerTaskUpdate(req, issue, action) {
+    req.app.get('io')?.emit('worker:task-update', {
+        action,
+        issue: completionIssueSummary(issue),
+    });
+}
+
+function completionActionError(issue, token) {
+    if (!issue) return 'This task could not be found.';
+    if (!isValidCompletionAction(issue, token)) {
+        return 'This link has expired, was already used, or is no longer assigned to this worker.';
+    }
+    return null;
+}
 
 // GET /api/issues - optionally filter by reporter/email for student, or return all for admin
 router.get('/', async (req, res, next) => {
@@ -299,6 +340,142 @@ router.patch('/:id/status', async (req, res, next) => {
     }
 });
 
+router.post('/:id/completion-action/preview', async (req, res, next) => {
+    try {
+        if (process.env.NODE_ENV === 'production' && !mongooseReady()) {
+            return res.status(503).json({ message: 'Task updates are unavailable while the database is disconnected.' });
+        }
+
+        const issue = await findIssueWithCompletionAction(req.params.id);
+        const error = completionActionError(issue, req.body?.token);
+        if (error) return res.status(issue ? 403 : 404).json({ message: error });
+
+        return res.json({ issue: completionIssueSummary(issue) });
+    } catch (error) {
+        return next(error);
+    }
+});
+
+router.post('/:id/completion-action/progress', async (req, res, next) => {
+    try {
+        if (process.env.NODE_ENV === 'production' && !mongooseReady()) {
+            return res.status(503).json({ message: 'Task updates are unavailable while the database is disconnected.' });
+        }
+
+        const issue = await findIssueWithCompletionAction(req.params.id);
+        const token = req.body?.token;
+        const error = completionActionError(issue, token);
+        if (error) return res.status(issue ? 403 : 404).json({ message: error });
+
+        const workerProgressAt = new Date();
+        const update = {
+            status: 'In progress',
+            workerProgressAt,
+            workerProgressMessage: 'Worker reports that this task still needs more time.',
+            updatedAt: workerProgressAt,
+        };
+        let updated;
+
+        if (mongooseReady()) {
+            updated = await Issue.findOneAndUpdate(
+                {
+                    _id: issue._id,
+                    completionActionTokenHash: hashCompletionToken(token),
+                    completionActionWorker: issue.assignedWorker,
+                    completionActionExpiresAt: { $gt: workerProgressAt },
+                    completionActionUsedAt: null,
+                    status: { $nin: ['Resolved', 'Rejected'] },
+                },
+                { $set: update },
+                { new: true }
+            );
+            if (!updated) {
+                return res.status(409).json({ message: 'This task was completed or its assignment changed.' });
+            }
+        } else {
+            const issueIndex = demoIssues.findIndex((item) => String(item._id) === String(issue._id));
+            if (issueIndex < 0 || !isValidCompletionAction(demoIssues[issueIndex], token)) {
+                return res.status(409).json({ message: 'This task was completed or its assignment changed.' });
+            }
+            updated = { ...demoIssues[issueIndex], ...update };
+            demoIssues[issueIndex] = updated;
+            saveLocalIssues(demoIssues);
+        }
+
+        emitWorkerTaskUpdate(req, updated, 'progress');
+        return res.json({
+            issue: completionIssueSummary(updated),
+            message: 'The task remains in progress. The admin has been notified.',
+        });
+    } catch (error) {
+        return next(error);
+    }
+});
+
+router.post('/:id/completion-action', async (req, res, next) => {
+    try {
+        if (process.env.NODE_ENV === 'production' && !mongooseReady()) {
+            return res.status(503).json({ message: 'Task updates are unavailable while the database is disconnected.' });
+        }
+
+        const issue = await findIssueWithCompletionAction(req.params.id);
+        const token = req.body?.token;
+        const error = completionActionError(issue, token);
+        if (error) return res.status(issue ? 403 : 404).json({ message: error });
+
+        const completedAt = new Date();
+        let updated;
+        if (mongooseReady()) {
+            updated = await Issue.findOneAndUpdate(
+                {
+                    _id: issue._id,
+                    completionActionTokenHash: hashCompletionToken(token),
+                    completionActionWorker: issue.assignedWorker,
+                    completionActionExpiresAt: { $gt: completedAt },
+                    completionActionUsedAt: null,
+                    status: { $nin: ['Resolved', 'Rejected'] },
+                },
+                {
+                    $set: {
+                        status: 'Resolved',
+                        completedAt,
+                        completedBy: extractWorkerName(issue.assignedWorker),
+                        completionActionUsedAt: completedAt,
+                        updatedAt: completedAt,
+                    },
+                },
+                { new: true }
+            );
+            if (!updated) {
+                return res.status(409).json({ message: 'This task was already completed or its assignment changed.' });
+            }
+        } else {
+            const issueIndex = demoIssues.findIndex((item) => String(item._id) === String(issue._id));
+            if (issueIndex < 0 || !isValidCompletionAction(demoIssues[issueIndex], token)) {
+                return res.status(409).json({ message: 'This task was already completed or its assignment changed.' });
+            }
+            updated = {
+                ...demoIssues[issueIndex],
+                status: 'Resolved',
+                completedAt,
+                completedBy: extractWorkerName(issue.assignedWorker),
+                completionActionUsedAt: completedAt,
+                updatedAt: completedAt,
+            };
+            demoIssues[issueIndex] = updated;
+            saveLocalIssues(demoIssues);
+        }
+
+        emitWorkerTaskUpdate(req, updated, 'completed');
+        return res.json({
+            issue: completionIssueSummary(updated),
+            message: 'Work marked as completed.',
+        });
+    } catch (error) {
+        return next(error);
+    }
+});
+
 // PATCH /api/issues/:id/assign - admin assigns worker and sets priority
 router.patch('/:id/assign', async (req, res, next) => {
     try {
@@ -310,6 +487,20 @@ router.patch('/:id/assign', async (req, res, next) => {
         if (status) updates.status = status;
         if (photoBefore !== undefined) updates.photoBefore = photoBefore;
         if (photoAfter !== undefined) updates.photoAfter = photoAfter;
+
+        let completionAction = null;
+        if (assignedWorker !== undefined && assignedWorker !== 'Unassigned') {
+            completionAction = createCompletionAction(req.params.id, assignedWorker);
+            updates.completionActionTokenHash = completionAction.tokenHash;
+            updates.completionActionWorker = completionAction.assignedWorker;
+            updates.completionActionExpiresAt = completionAction.expiresAt;
+            updates.completionActionUsedAt = null;
+        } else if (assignedWorker === 'Unassigned') {
+            updates.completionActionTokenHash = null;
+            updates.completionActionWorker = null;
+            updates.completionActionExpiresAt = null;
+            updates.completionActionUsedAt = null;
+        }
 
         let savedIssue;
 
@@ -327,6 +518,7 @@ router.patch('/:id/assign', async (req, res, next) => {
 
         let whatsappUrl = null;
         let workerPhone = null;
+        const sendViaProvider = req.body.sendViaProvider !== false;
 
         if (assignedWorker && assignedWorker !== 'Unassigned') {
             const workerName = extractWorkerName(savedIssue.assignedWorker);
@@ -338,6 +530,7 @@ router.patch('/:id/assign', async (req, res, next) => {
                     location: savedIssue.location,
                     priority: savedIssue.priority,
                     adminNotes: savedIssue.adminNotes,
+                    completionUrl: completionAction?.url,
                 });
             }
 
@@ -349,38 +542,42 @@ router.patch('/:id/assign', async (req, res, next) => {
                     priority: savedIssue.priority,
                     assignedWorker: savedIssue.assignedWorker,
                     workerPhone: workerPhone || '',
-                    status: 'pending',
+                    status: sendViaProvider ? 'pending' : 'link_generated',
                 });
 
-                notifyWorkerAssignment({
-                    assignedWorker: savedIssue.assignedWorker,
-                    issueTitle: savedIssue.title,
-                    location: savedIssue.location,
-                    priority: savedIssue.priority,
-                    adminNotes: savedIssue.adminNotes,
-                })
-                    .then(async (result) => {
-                        const status = result.success
-                        ? 'accepted'
-                            : result.reasonCode === 'not_configured'
-                                ? 'link_generated'
-                                : 'failed';
-                        await WhatsAppDispatch.findByIdAndUpdate(dispatch._id, {
-                            status,
-                            providerMessageId: result.id || '',
-                            failureReason: status === 'failed' ? result.reason || 'WhatsApp message could not be sent.' : '',
-                        });
+                if (sendViaProvider) {
+                    notifyWorkerAssignment({
+                        assignedWorker: savedIssue.assignedWorker,
+                        issueTitle: savedIssue.title,
+                        location: savedIssue.location,
+                        priority: savedIssue.priority,
+                        adminNotes: savedIssue.adminNotes,
+                        completionUrl: completionAction?.url,
                     })
-                    .catch((error) => {
-                        console.error('[WhatsApp] Could not update dispatch history:', error);
-                    });
-            } else {
+                        .then(async (result) => {
+                            const status = result.success
+                                ? 'accepted'
+                                : result.reasonCode === 'not_configured'
+                                    ? 'link_generated'
+                                    : 'failed';
+                            await WhatsAppDispatch.findByIdAndUpdate(dispatch._id, {
+                                status,
+                                providerMessageId: result.id || '',
+                                failureReason: status === 'failed' ? result.reason || 'WhatsApp message could not be sent.' : '',
+                            });
+                        })
+                        .catch((error) => {
+                            console.error('[WhatsApp] Could not update dispatch history:', error);
+                        });
+                }
+            } else if (sendViaProvider) {
                 notifyWorkerAssignment({
                     assignedWorker: savedIssue.assignedWorker,
                     issueTitle: savedIssue.title,
                     location: savedIssue.location,
                     priority: savedIssue.priority,
                     adminNotes: savedIssue.adminNotes,
+                    completionUrl: completionAction?.url,
                 }).catch((error) => {
                     console.error('[WhatsApp] Unexpected notification error:', error);
                 });
@@ -388,8 +585,13 @@ router.patch('/:id/assign', async (req, res, next) => {
         }
 
         const responseData = savedIssue && savedIssue.toObject ? savedIssue.toObject() : { ...savedIssue };
+        delete responseData.completionActionTokenHash;
+        delete responseData.completionActionWorker;
+        delete responseData.completionActionExpiresAt;
+        delete responseData.completionActionUsedAt;
         if (whatsappUrl) responseData.whatsappUrl = whatsappUrl;
         if (workerPhone) responseData.workerPhone = workerPhone;
+        if (completionAction) responseData.completionUrl = completionAction.url;
 
         return res.json(responseData);
     } catch (error) {

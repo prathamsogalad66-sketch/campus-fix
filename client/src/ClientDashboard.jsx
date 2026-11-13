@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { io } from 'socket.io-client'
 import {
     Activity,
     AlertCircle,
@@ -50,6 +51,16 @@ const configuredApiUrl = import.meta.env.VITE_API_URL?.trim().replace(/\/+$/, ''
 const apiUrl = configuredApiUrl
     ? `${configuredApiUrl.replace(/\/api$/i, '')}/api`
     : '/api'
+
+function readCompletionAction() {
+    const match = window.location.hash.match(/^#complete\/([^/]+)\/([A-Za-z0-9_-]+)$/)
+    if (!match) return null
+    try {
+        return { issueId: decodeURIComponent(match[1]), token: match[2] }
+    } catch {
+        return null
+    }
+}
 
 // Master passcodes for admin access (only known to the administrator)
 const MASTER_ADMIN_PASSCODES = ['sdm@admin2026', 'admin123', 'admin@sdmcet']
@@ -111,6 +122,9 @@ function buildWhatsAppUrl(workerPhone, issue, formOverrides = {}) {
         `${adminNotes || 'Please attend immediately and report completion to Estates Office.'}`,
         `━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
         `👉 *Action Required:* Please proceed to the location immediately and correct the problem.`,
+        ...(formOverrides.completionUrl
+            ? ['', `✅ Tap this link to update your work order:`, formOverrides.completionUrl]
+            : []),
         `— SDMCET Estates & Maintenance Office`,
     ].join('\n')
 
@@ -250,6 +264,7 @@ function statusClass(status = '') {
 
 function App() {
     const [user, setUser] = useState(readSession)
+    const [completionAction] = useState(readCompletionAction)
     const [isAdminAuthorized, setIsAdminAuthorized] = useState(checkAdminToken)
     const [showAdminUnlockModal, setShowAdminUnlockModal] = useState(false)
     const [adminPasscode, setAdminPasscode] = useState('')
@@ -281,6 +296,11 @@ function App() {
     })
     const [dispatchSuccessModal, setDispatchSuccessModal] = useState(null)
     const [autoNotifyWhatsApp, setAutoNotifyWhatsApp] = useState(true)
+
+    useEffect(() => {
+        if (!completionAction) return
+        window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
+    }, [completionAction])
 
     const isStudent = user?.role === 'student'
     const isAdmin = user?.role === 'admin'
@@ -403,6 +423,42 @@ function App() {
             .then((data) => setStorageMode(data.storageMode || 'mongodb'))
             .catch(() => setStorageMode('unavailable'))
     }, [])
+
+    useEffect(() => {
+        if (completionAction) return
+        const socketOrigin = configuredApiUrl
+            ? configuredApiUrl.replace(/\/api$/i, '')
+            : window.location.origin
+        const socket = io(socketOrigin, { path: '/socket.io' })
+        let connectedBefore = false
+
+        const reloadIssues = () => {
+            fetch(`${apiUrl}/issues`)
+                .then((response) => {
+                    if (!response.ok) throw new Error('Could not reload campus issues.')
+                    return response.json()
+                })
+                .then(setIssues)
+                .catch((error) => setNotice(`${error.message} Server may be offline.`))
+        }
+
+        socket.on('connect', () => {
+            if (connectedBefore) reloadIssues()
+            connectedBefore = true
+        })
+        socket.on('storage:ready', reloadIssues)
+        socket.on('worker:task-update', ({ action, issue } = {}) => {
+            if (!issue?._id) return
+            setIssues((current) => current.map((item) => (
+                item._id === issue._id ? { ...item, ...issue } : item
+            )))
+            setNotice(action === 'completed'
+                ? `${issue.completedBy || issue.assignedWorker} marked "${issue.title}" as completed.`
+                : `${issue.assignedWorker} reports that "${issue.title}" still needs more time.`)
+        })
+
+        return () => socket.disconnect()
+    }, [completionAction])
 
     // STRICT USER PRIVACY FILTER:
     // Students only ever see reports they submitted themselves.
@@ -544,13 +600,21 @@ function App() {
     // Admin save updates
     const saveAdminAssignment = async (e, options = {}) => {
         if (e && e.preventDefault) e.preventDefault()
-        if (!selectedIssue) return
+        if (!selectedIssue) {
+            options.dispatchWindow?.close()
+            return
+        }
+        const shouldOpenWhatsApp = options.forceOpenWhatsApp ||
+            (options.shouldOpenWhatsApp !== false && autoNotifyWhatsApp)
+        const sendViaProvider = options.sendViaProvider !== undefined
+            ? options.sendViaProvider
+            : !shouldOpenWhatsApp
         setSaving(true)
         try {
             const res = await fetch(`${apiUrl}/issues/${selectedIssue._id}/assign`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(adminForm),
+                body: JSON.stringify({ ...adminForm, sendViaProvider }),
             })
             const updated = await res.json()
             if (!res.ok) throw new Error(updated.message || 'Failed to update work assignment.')
@@ -559,12 +623,20 @@ function App() {
 
             const assignedWorkerDetails = getWorkerDetails(adminForm.assignedWorker)
             if (assignedWorkerDetails) {
-                const waUrl = updated.whatsappUrl || buildWhatsAppUrl(assignedWorkerDetails.phone, { ...selectedIssue, ...adminForm })
+                const waUrl = updated.whatsappUrl || buildWhatsAppUrl(assignedWorkerDetails.phone, {
+                    ...selectedIssue,
+                    ...adminForm,
+                    completionUrl: updated.completionUrl,
+                })
 
                 // Auto-open WhatsApp in a new tab/window
-                if (options.shouldOpenWhatsApp !== false && autoNotifyWhatsApp) {
+                if (shouldOpenWhatsApp) {
                     try {
-                        window.open(waUrl, '_blank')
+                        if (options.dispatchWindow && !options.dispatchWindow.closed) {
+                            options.dispatchWindow.location.href = waUrl
+                        } else {
+                            window.open(waUrl, '_blank')
+                        }
                     } catch (err) {
                         console.warn('Could not auto-open WhatsApp:', err)
                     }
@@ -582,6 +654,7 @@ function App() {
                 setNotice(`Work updated: Priority set to ${adminForm.priority}, assigned to ${adminForm.assignedWorker}.`)
             }
         } catch (error) {
+            options.dispatchWindow?.close()
             setNotice(error.message || 'Could not save assignment.')
         } finally {
             setSaving(false)
@@ -704,6 +777,10 @@ function App() {
         }
         setActivePage(page)
         setMobileNav(false)
+    }
+
+    if (completionAction) {
+        return <WorkerCompletionAction action={completionAction} />
     }
 
     if (!user) {
@@ -1866,6 +1943,22 @@ function IssueDetailsPanel({
     const [flowNotice, setFlowNotice] = useState('')
     const [lightboxPhoto, setLightboxPhoto] = useState(null)
 
+    const dispatchWorkerOnWhatsApp = (event) => {
+        event.preventDefault()
+        const dispatchWindow = window.open('about:blank', '_blank')
+        if (!dispatchWindow) {
+            setFlowNotice('Allow pop-ups to open the prepared WhatsApp dispatch.')
+            return
+        }
+        dispatchWindow.opener = null
+        onSaveAdmin(event, {
+            forceOpenWhatsApp: true,
+            shouldOpenWhatsApp: true,
+            sendViaProvider: false,
+            dispatchWindow,
+        })
+    }
+
     // Clear flow notice toast automatically
     useEffect(() => {
         if (!flowNotice) return
@@ -2133,11 +2226,10 @@ function IssueDetailsPanel({
                                 </button>
                             ) : (
                                 <a
-                                    href={buildWhatsAppUrl(assignedWorkerInfo?.phone || activeWorkerDetails?.phone || recommendedWorker.phone, issue, adminForm)}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
+                                    href="#dispatch"
                                     className="flow-action-btn whatsapp"
                                     title="Open WhatsApp chat with worker immediately"
+                                    onClick={dispatchWorkerOnWhatsApp}
                                 >
                                     <span>📲 Worker WhatsApp</span>
                                 </a>
@@ -2283,11 +2375,10 @@ function IssueDetailsPanel({
                                 </span>
                                 {isAdmin && assignedWorkerInfo && (
                                     <a
-                                        href={buildWhatsAppUrl(assignedWorkerInfo.phone, issue)}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
+                                        href="#dispatch"
                                         className="whatsapp-quick-chip"
                                         title="Open WhatsApp chat with worker"
+                                        onClick={dispatchWorkerOnWhatsApp}
                                     >
                                         📲 WhatsApp ({assignedWorkerInfo.phone})
                                     </a>
@@ -2302,6 +2393,18 @@ function IssueDetailsPanel({
                     <dt>STATUS</dt>
                     <dd>{issue.status}</dd>
                 </div>
+                {issue.workerProgressAt && (
+                    <div>
+                        <dt>WORKER UPDATE</dt>
+                        <dd>{issue.workerProgressMessage || 'Worker reports the task still needs more time.'} · {formatDate(issue.workerProgressAt)}</dd>
+                    </div>
+                )}
+                {issue.completedAt && (
+                    <div>
+                        <dt>COMPLETED</dt>
+                        <dd>{issue.completedBy ? `${issue.completedBy} · ` : ''}{formatDate(issue.completedAt)}</dd>
+                    </div>
+                )}
                 <div>
                     <dt>DATE FILED</dt>
                     <dd>{formatDate(issue.createdAt)}</dd>
@@ -2410,10 +2513,9 @@ function IssueDetailsPanel({
                                 </div>
 
                                 <a
-                                    href={buildWhatsAppUrl(activeWorkerDetails.phone, issue, adminForm)}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
+                                    href="#dispatch"
                                     className="whatsapp-btn"
+                                    onClick={dispatchWorkerOnWhatsApp}
                                 >
                                     📲 Open WhatsApp & Dispatch Work Order Now
                                 </a>
@@ -2460,13 +2562,9 @@ function IssueDetailsPanel({
 
                         {activeWorkerDetails && (
                             <a
-                                href={buildWhatsAppUrl(activeWorkerDetails.phone, issue, adminForm)}
-                                target="_blank"
-                                rel="noopener noreferrer"
+                                href="#dispatch"
                                 className="admin-dispatch-whatsapp-btn"
-                                onClick={() => {
-                                    onSaveAdmin(null, { shouldOpenWhatsApp: false })
-                                }}
+                                onClick={dispatchWorkerOnWhatsApp}
                             >
                                 <span>📲</span> Dispatch to {activeWorkerDetails.name.split(' ')[0]} via WhatsApp
                             </a>
@@ -2763,6 +2861,140 @@ function AdminPasscodeModal({ passcode, setPasscode, error, onSubmit, onClose })
                 </form>
             </div>
         </div>
+    )
+}
+
+function WorkerCompletionAction({ action }) {
+    const [phase, setPhase] = useState('loading')
+    const [issue, setIssue] = useState(null)
+    const [error, setError] = useState('')
+
+    useEffect(() => {
+        let cancelled = false
+        fetch(`${apiUrl}/issues/${encodeURIComponent(action.issueId)}/completion-action/preview`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: action.token }),
+        })
+            .then(async (response) => {
+                const data = await response.json()
+                if (!response.ok) throw new Error(data.message || 'This task link is not valid.')
+                if (!cancelled) {
+                    setIssue(data.issue)
+                    setPhase('ready')
+                }
+            })
+            .catch((requestError) => {
+                if (!cancelled) {
+                    setError(requestError.message || 'Could not verify this task link.')
+                    setPhase('error')
+                }
+            })
+        return () => {
+            cancelled = true
+        }
+    }, [action])
+
+    const submitAction = async (endpoint, nextPhase) => {
+        setError('')
+        setPhase('submitting')
+        try {
+            const actionPath = endpoint ? `/completion-action/${endpoint}` : '/completion-action'
+            const response = await fetch(`${apiUrl}/issues/${encodeURIComponent(action.issueId)}${actionPath}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: action.token }),
+            })
+            const data = await response.json()
+            if (!response.ok) throw new Error(data.message || 'Could not update this task.')
+            setIssue(data.issue)
+            setPhase(nextPhase)
+        } catch (requestError) {
+            setError(requestError.message || 'Could not update this task.')
+            setPhase('error')
+        }
+    }
+
+    const markCompleted = () => submitAction('', 'completed')
+    const reportInProgress = () => submitAction('progress', 'progress')
+
+    return (
+        <main className="worker-completion-shell">
+            <section className="worker-completion-card" aria-live="polite">
+                <div className={`worker-completion-icon ${phase === 'completed' ? 'success' : ''}`}>
+                    {phase === 'completed' ? <CheckCircle2 size={26} /> : <Wrench size={24} />}
+                </div>
+                <p className="worker-completion-eyebrow">SDMCAMPUSFIX · WORK ORDER</p>
+                <h1>
+                    {phase === 'completed'
+                        ? 'Work marked as completed'
+                        : phase === 'loading'
+                            ? 'Checking your task'
+                            : phase === 'submitting'
+                                ? 'Updating the task'
+                                : phase === 'error'
+                                    ? 'Could not update this task'
+                                    : phase === 'progress'
+                                        ? 'Task remains in progress'
+                                        : 'What is the work status?'}
+                </h1>
+
+                {phase === 'loading' || phase === 'submitting' ? (
+                    <p className="worker-completion-copy">Please wait while we update the work order.</p>
+                ) : error ? (
+                    <p className="worker-completion-error" role="alert">
+                        <AlertCircle size={16} /> {error}
+                    </p>
+                ) : issue ? (
+                    <>
+                        <div className="worker-completion-details">
+                            <span>Task</span>
+                            <strong>{issue.title}</strong>
+                            <span>Location</span>
+                            <strong>{issue.location}</strong>
+                            <span>Assigned worker</span>
+                            <strong>{issue.assignedWorker}</strong>
+                        </div>
+                        <p className="worker-completion-copy">
+                            {phase === 'completed'
+                                ? 'Task marked as completed successfully. The website has been updated.'
+                                : phase === 'progress'
+                                    ? 'The admin has been notified. The task remains in progress; you can mark it complete when finished.'
+                                    : 'Choose “Still takes time” if you are continuing the work, or mark it complete when finished.'}
+                        </p>
+                    </>
+                ) : null}
+
+                {phase === 'ready' && (
+                    <div className="worker-completion-actions">
+                        <button className="worker-completion-button" type="button" onClick={markCompleted}>
+                            <CheckCircle2 size={18} />
+                            Mark as Completed
+                            <ArrowRight size={17} />
+                        </button>
+                        <button className="worker-progress-button" type="button" onClick={reportInProgress}>
+                            Still takes time
+                        </button>
+                    </div>
+                )}
+                {phase === 'progress' && (
+                    <button className="worker-completion-button" type="button" onClick={markCompleted}>
+                        <CheckCircle2 size={18} />
+                        Mark as Completed
+                        <ArrowRight size={17} />
+                    </button>
+                )}
+                {phase === 'completed' && (
+                    <div className="worker-completion-confirmation">
+                        <CheckCircle2 size={17} /> Completion confirmed
+                        {issue.completedAt && <time>{new Date(issue.completedAt).toLocaleString()}</time>}
+                    </div>
+                )}
+                {['ready', 'progress', 'completed'].includes(phase) && (
+                    <p className="worker-completion-footnote">This task link is tied to your assignment and can only complete the task once.</p>
+                )}
+            </section>
+        </main>
     )
 }
 

@@ -113,7 +113,7 @@ async function sendWhatsAppMessage(phone, message) {
  * @param {string} opts.priority
  * @param {string} opts.adminNotes
  */
-async function notifyWorkerAssignment({ assignedWorker, issueTitle, location, priority, adminNotes }) {
+async function notifyWorkerAssignment({ assignedWorker, issueTitle, location, priority, adminNotes, completionUrl }) {
     if (!assignedWorker || assignedWorker === 'Unassigned') {
         return { success: false, skipped: true, reasonCode: 'not_assigned' };
     }
@@ -144,13 +144,14 @@ async function notifyWorkerAssignment({ assignedWorker, issueTitle, location, pr
         `${adminNotes || 'No additional notes.'}`,
         ``,
         `Please attend to this at the earliest. Contact the Estate Office if you need assistance.`,
+        ...(completionUrl ? ['', `✅ Tap this link to update your work order:`, completionUrl] : []),
         `— SDMCET Estates Management`,
     ].join('\n');
 
     return sendWhatsAppMessage(phone, message);
 }
 
-function getWhatsAppUrl(phone, { issueTitle, location, priority, adminNotes }) {
+function getWhatsAppUrl(phone, { issueTitle, location, priority, adminNotes, completionUrl }) {
     if (!phone) return null;
     const clean = String(phone).replace(/\D/g, '');
     const target = clean.startsWith('91') && clean.length > 10 ? clean : `91${clean.replace(/^0+/, '')}`;
@@ -166,6 +167,7 @@ function getWhatsAppUrl(phone, { issueTitle, location, priority, adminNotes }) {
         `${adminNotes || 'No additional notes.'}`,
         ``,
         `Please attend to this at the earliest. Contact the Estate Office if you need assistance.`,
+        ...(completionUrl ? ['', `✅ Tap this link to update your work order:`, completionUrl] : []),
         `— SDMCET Estates Management`,
     ].join('\n');
     return `https://api.whatsapp.com/send?phone=${target}&text=${encodeURIComponent(message)}`;

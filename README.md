@@ -12,6 +12,14 @@ A MERN issue reporting dashboard for campus communities.
 
 The API uses local JSON storage when `MONGODB_URI` is absent or MongoDB cannot be reached. Reports submitted in this mode are saved to `server/data/issues.json` on this server and are not synced to Atlas. The dashboard displays a warning while local storage is active. Check `GET /api/health` for the current `storageMode`.
 
+## Deploy the complete app on Render
+
+The root `build` command builds the React client, and the Express server serves that build and the API from the same Render service. Use the repository root as the service root, `npm run build` as the build command, and `npm start` as the start command.
+
+Set `MONGODB_URI` and `MONGODB_DATABASE` in the Render service environment. Set `PUBLIC_APP_URL` to the public HTTPS URL shown by Render (for example, `https://your-render-service.onrender.com`). Render also provides `RENDER_EXTERNAL_URL`, which is used as a fallback if `PUBLIC_APP_URL` is not set. For a separate Render Static Site frontend, set `PUBLIC_APP_URL` to that site's URL, `CLIENT_URL` to its origin, and the frontend build variable `VITE_API_URL` to the backend URL ending in `/api`.
+
+When a worker is assigned a task, the WhatsApp dispatch includes a task-specific link. The worker can report that more time is needed or mark the task complete from that page. Completion is saved to MongoDB and sent to open dashboards in real time; earlier WhatsApp messages are not changed.
+
 ## Deploy the frontend to Vercel
 
 The frontend is the Vite/React application in `client/`. The Express API, MongoDB connection, and server-side integrations remain on Render.
@@ -46,3 +54,6 @@ When an admin assigns a worker, the API records a WhatsApp dispatch entry in the
 - `GET /api/issues`
 - `POST /api/issues`
 - `PATCH /api/issues/:id/status`
+- `POST /api/issues/:id/completion-action/preview`
+- `POST /api/issues/:id/completion-action/progress`
+- `POST /api/issues/:id/completion-action`
