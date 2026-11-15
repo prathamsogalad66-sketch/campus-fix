@@ -158,6 +158,10 @@ function emitWorkerTaskUpdate(req, issue, action) {
     });
 }
 
+function emitNewIssue(req, issue) {
+    req.app.get('io')?.emit('issue:created', { issueId: String(issue._id) });
+}
+
 function completionActionError(issue, token) {
     if (!issue) return 'This task could not be found.';
     if (!isValidCompletionAction(issue, token)) {
@@ -226,10 +230,12 @@ router.post('/', async (req, res, next) => {
             const created = { ...newDoc, _id: `local-${Date.now()}` };
             demoIssues.unshift(created);
             saveLocalIssues(demoIssues);
+            emitNewIssue(req, created);
             return res.status(201).json(created);
         }
 
         const issue = await Issue.create(newDoc);
+        emitNewIssue(req, issue);
         return res.status(201).json(issue);
     } catch (error) {
         next(error);

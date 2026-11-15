@@ -361,6 +361,11 @@ select:focus-visible {
     box-shadow: 0 16px 40px #00000045;
 }
 
+.notification-popover {
+    max-height: 290px;
+    overflow-y: auto;
+}
+
 .search-results > strong {
     display: block;
     padding: 12px 14px;
@@ -1706,6 +1711,24 @@ select:focus-visible {
     background: #e88362;
 }
 
+.notification-count {
+    position: absolute;
+    top: -5px;
+    right: -7px;
+    min-width: 17px;
+    height: 17px;
+    display: grid;
+    place-items: center;
+    padding: 0 4px;
+    border: 2px solid #1d201a;
+    border-radius: 999px;
+    color: #fff;
+    background: #d65b47;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1;
+}
+
 .search-field,
 .notification-popover,
 .profile-popover {
@@ -1731,7 +1754,25 @@ select:focus-visible {
 }
 
 .notification-popover>button span {
+    min-width: 0;
+    overflow: hidden;
     color: var(--ink);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.notification-popover>button small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.notification-overflow {
+    margin: 8px 0 0;
+    padding-top: 8px;
+    border-top: 1px solid #414338;
+    color: var(--muted);
+    text-align: center;
 }
 
 .content {

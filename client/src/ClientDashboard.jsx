@@ -213,6 +213,18 @@ const initialForm = {
     photoBefore: '',
 }
 
+const ADMIN_KNOWN_REPORT_IDS_KEY = 'sdmcet-admin-known-report-ids'
+const ADMIN_UNREAD_REPORT_IDS_KEY = 'sdmcet-admin-unread-report-ids'
+
+function readStoredReportIds(key) {
+    try {
+        const ids = JSON.parse(localStorage.getItem(key) || '[]')
+        return Array.isArray(ids) ? ids.map(String) : []
+    } catch {
+        return []
+    }
+}
+
 function readSession() {
     try {
         const stored = JSON.parse(localStorage.getItem('sdmcet-prototype-session') || 'null')
@@ -271,6 +283,8 @@ function App() {
     const [adminPasscodeError, setAdminPasscodeError] = useState('')
 
     const [issues, setIssues] = useState([])
+    const [newReportIds, setNewReportIds] = useState(() => readStoredReportIds(ADMIN_UNREAD_REPORT_IDS_KEY))
+    const [notificationsInitialized, setNotificationsInitialized] = useState(false)
     const [activePage, setActivePage] = useState('Overview')
     const [activeStatus, setActiveStatus] = useState('All')
     const [activePriority, setActivePriority] = useState('All')
@@ -442,6 +456,7 @@ function App() {
                 .catch((error) => setNotice(`${error.message} Server may be offline.`))
         }
 
+        socket.on('issue:created', reloadIssues)
         socket.on('connect', () => {
             if (connectedBefore) reloadIssues()
             connectedBefore = true
@@ -460,6 +475,34 @@ function App() {
         return () => socket.disconnect()
     }, [completionAction])
 
+    useEffect(() => {
+        if (!isAdmin || issues.length === 0) return
+
+        const currentIds = issues.map((issue) => String(issue._id))
+        const currentIdSet = new Set(currentIds)
+        const storedKnownIds = localStorage.getItem(ADMIN_KNOWN_REPORT_IDS_KEY)
+        const knownIds = new Set(readStoredReportIds(ADMIN_KNOWN_REPORT_IDS_KEY))
+        const unreadIds = readStoredReportIds(ADMIN_UNREAD_REPORT_IDS_KEY)
+            .filter((id) => currentIdSet.has(id))
+        const cutoff = Date.now() - 24 * 60 * 60 * 1000
+        const newlyAddedIds = issues
+            .filter((issue) => {
+                if (storedKnownIds !== null) return !knownIds.has(String(issue._id))
+                return new Date(issue.createdAt || 0).getTime() >= cutoff
+            })
+            .map((issue) => String(issue._id))
+        const nextUnreadIds = [...new Set([...unreadIds, ...newlyAddedIds])]
+
+        localStorage.setItem(ADMIN_KNOWN_REPORT_IDS_KEY, JSON.stringify(currentIds))
+        localStorage.setItem(ADMIN_UNREAD_REPORT_IDS_KEY, JSON.stringify(nextUnreadIds))
+        setNewReportIds(nextUnreadIds)
+
+        if (newlyAddedIds.length || (!notificationsInitialized && nextUnreadIds.length)) {
+            setShowNotifications(true)
+        }
+        if (!notificationsInitialized) setNotificationsInitialized(true)
+    }, [issues, isAdmin, notificationsInitialized])
+
     // STRICT USER PRIVACY FILTER:
     // Students only ever see reports they submitted themselves.
     // Admin sees every report across the entire campus.
@@ -474,6 +517,13 @@ function App() {
         }
         return issues
     }, [issues, user, isStudent, currentEmail, currentUser])
+
+    const newReports = useMemo(() => {
+        const unreadIds = new Set(newReportIds)
+        return issues
+            .filter((issue) => unreadIds.has(String(issue._id)))
+            .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    }, [issues, newReportIds])
 
     // Filtered issues based on search, status & priority
     const visibleIssues = useMemo(() => {
@@ -783,6 +833,18 @@ function App() {
         setMobileNav(false)
     }
 
+    const openNewReport = (issueId) => {
+        const nextUnreadIds = newReportIds.filter((id) => id !== String(issueId))
+        localStorage.setItem(ADMIN_UNREAD_REPORT_IDS_KEY, JSON.stringify(nextUnreadIds))
+        setNewReportIds(nextUnreadIds)
+        setSelectedId(issueId)
+        setActiveStatus('All')
+        setActivePriority('All')
+        setSearch('')
+        setShowNotifications(false)
+        navigate('All issues register')
+    }
+
     if (completionAction) {
         return <WorkerCompletionAction action={completionAction} />
     }
@@ -1000,32 +1062,63 @@ function App() {
                                 aria-label="Notifications"
                             >
                                 <Bell size={19} />
-                                {resolvedCount > 0 && <i />}
+                                {isAdmin && newReportIds.length > 0 ? (
+                                    <span className="notification-count">
+                                        {newReportIds.length > 99 ? '99+' : newReportIds.length}
+                                    </span>
+                                ) : (
+                                    resolvedCount > 0 && <i />
+                                )}
                             </button>
                             {showNotifications && (
                                 <div className="notification-popover">
-                                    <strong>{isStudent ? 'Your Resolved Issues' : 'Campus Resolved Reports'}</strong>
-                                    {roleScopedIssues.filter((i) => i.status === 'Resolved').length ? (
-                                        roleScopedIssues
-                                            .filter((i) => i.status === 'Resolved')
-                                            .slice(0, 4)
-                                            .map((issue) => (
+                                    {isAdmin && newReports.length > 0 ? (
+                                        <>
+                                            <strong>New campus reports · {newReports.length}</strong>
+                                            {newReports.slice(0, 3).map((issue) => (
                                                 <button
                                                     key={issue._id}
-                                                    onClick={() => {
-                                                        setSelectedId(issue._id)
-                                                        setShowNotifications(false)
-                                                    }}
+                                                    onClick={() => openNewReport(issue._id)}
                                                 >
-                                                    <Check size={14} />
+                                                    <FilePlus2 size={14} />
                                                     <span>
                                                         {issue.title}
-                                                        <small>{relativeDate(issue.updatedAt || issue.createdAt)}</small>
+                                                        <small>{issue.location} · {relativeDate(issue.createdAt)}</small>
                                                     </span>
                                                 </button>
-                                            ))
+                                            ))}
+                                            {newReports.length > 3 && (
+                                                <p className="notification-overflow">
+                                                    +{newReports.length - 3} more new reports
+                                                </p>
+                                            )}
+                                        </>
                                     ) : (
-                                        <p>No resolutions yet.</p>
+                                        <>
+                                            <strong>{isStudent ? 'Your Resolved Issues' : isAdmin ? 'Campus Resolved Reports' : 'Notifications'}</strong>
+                                            {roleScopedIssues.filter((i) => i.status === 'Resolved').length ? (
+                                                roleScopedIssues
+                                                    .filter((i) => i.status === 'Resolved')
+                                                    .slice(0, 4)
+                                                    .map((issue) => (
+                                                        <button
+                                                            key={issue._id}
+                                                            onClick={() => {
+                                                                setSelectedId(issue._id)
+                                                                setShowNotifications(false)
+                                                            }}
+                                                        >
+                                                            <Check size={14} />
+                                                            <span>
+                                                                {issue.title}
+                                                                <small>{relativeDate(issue.updatedAt || issue.createdAt)}</small>
+                                                            </span>
+                                                        </button>
+                                                    ))
+                                            ) : (
+                                                <p>No new notifications.</p>
+                                            )}
+                                        </>
                                     )}
                                 </div>
                             )}
