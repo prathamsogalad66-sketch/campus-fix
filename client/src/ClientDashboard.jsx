@@ -87,9 +87,13 @@ function getWorkerDetails(assignedWorkerString) {
     return CAMPUS_WORKERS.find((w) => assignedWorkerString.includes(w.name)) || null
 }
 
-function buildWhatsAppUrl(workerPhone, issue, formOverrides = {}) {
+function getWhatsAppTargetPhone(workerPhone) {
     const rawDigits = String(workerPhone || '').replace(/\D/g, '')
-    const targetPhone = rawDigits.startsWith('91') && rawDigits.length > 10 ? rawDigits : `91${rawDigits.replace(/^0+/, '')}`
+    return rawDigits.startsWith('91') && rawDigits.length > 10 ? rawDigits : `91${rawDigits.replace(/^0+/, '')}`
+}
+
+function buildWhatsAppUrl(workerPhone, issue, formOverrides = {}) {
+    const targetPhone = getWhatsAppTargetPhone(workerPhone)
 
     const priority = formOverrides.priority || issue.priority || 'Medium'
     const adminNotes = formOverrides.adminNotes !== undefined ? formOverrides.adminNotes : (issue.adminNotes || '')
@@ -129,6 +133,12 @@ function buildWhatsAppUrl(workerPhone, issue, formOverrides = {}) {
     ].join('\n')
 
     return `https://api.whatsapp.com/send?phone=${targetPhone}&text=${encodeURIComponent(text)}`
+}
+
+function updateWhatsAppTarget(whatsappUrl, workerPhone) {
+    const url = new URL(whatsappUrl)
+    url.searchParams.set('phone', getWhatsAppTargetPhone(workerPhone))
+    return url.toString()
 }
 
 
@@ -677,11 +687,14 @@ function App() {
             setIssues((curr) => curr.map((item) => (item._id === selectedIssue._id ? { ...item, ...updated } : item)))
 
             if (assignedWorkerDetails) {
-                const waUrl = buildWhatsAppUrl(assignedWorkerDetails.phone, {
+                const fallbackWhatsAppUrl = buildWhatsAppUrl(assignedWorkerDetails.phone, {
                     ...selectedIssue,
                     ...adminForm,
                     completionUrl: updated.completionUrl,
                 })
+                const waUrl = updated.whatsappUrl
+                    ? updateWhatsAppTarget(updated.whatsappUrl, assignedWorkerDetails.phone)
+                    : fallbackWhatsAppUrl
 
                 // Auto-open WhatsApp in a new tab/window
                 if (shouldOpenWhatsApp) {

@@ -75,7 +75,8 @@ test('production completion links reject non-HTTPS website origins', () => {
 
 test('WhatsApp dispatch text contains the worker completion link', () => {
     const completionUrl = 'https://campus-fix.onrender.com/#complete/task-123/abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG';
-    const whatsappUrl = getWhatsAppUrl('918123751706', {
+    const workerPhone = resolveWorkerPhone('Prakash Joshi', '+91 63660 21757');
+    const whatsappUrl = getWhatsAppUrl(workerPhone, {
         issueTitle: 'Block A Cleaning',
         location: 'Block A',
         priority: 'High',
@@ -83,6 +84,7 @@ test('WhatsApp dispatch text contains the worker completion link', () => {
         completionUrl,
     });
 
+    assert.equal(new URL(whatsappUrl).searchParams.get('phone'), '916366021757');
     assert.ok(new URL(whatsappUrl).searchParams.get('text').includes(completionUrl));
 });
 
