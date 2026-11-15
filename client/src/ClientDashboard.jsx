@@ -3103,7 +3103,6 @@ function WorkerCompletionAction({ action }) {
                                         <input
                                             type="file"
                                             accept="image/jpeg,image/png,image/webp"
-                                            capture="environment"
                                             onChange={async (event) => {
                                                 const file = event.target.files?.[0]
                                                 event.target.value = ''
