@@ -37,6 +37,18 @@ function extractWorkerName(str) {
     return match ? match[1].trim() : str.trim();
 }
 
+function normalizeWhatsAppPhone(phone) {
+    const digits = String(phone || '').replace(/\D/g, '');
+    if (!digits) return '';
+    return digits.startsWith('91') && digits.length > 10 ? digits : `91${digits.replace(/^0+/, '')}`;
+}
+
+function resolveWorkerPhone(workerName, requestedPhone) {
+    return requestedPhone
+        ? normalizeWhatsAppPhone(requestedPhone)
+        : WORKER_PHONES[workerName] || null;
+}
+
 /**
  * Send a WhatsApp message using Green API (plain HTTPS, no external SDK).
  * @param {string} phone   - Phone number without '+', e.g. "919845123401"
@@ -58,8 +70,9 @@ async function sendWhatsAppMessage(phone, message) {
     }
 
     const url = `https://${apiHost}/waInstance${idInstance}/sendMessage/${apiToken}`;
+    const targetPhone = normalizeWhatsAppPhone(phone);
     const body = JSON.stringify({
-        chatId: `${phone}@c.us`,
+        chatId: `${targetPhone}@c.us`,
         message: message,
     });
 
@@ -79,7 +92,7 @@ async function sendWhatsAppMessage(phone, message) {
                 try {
                     const parsed = JSON.parse(data);
                     if (parsed.idMessage) {
-                        console.log(`[WhatsApp] ✅ Message sent to ${phone} | ID: ${parsed.idMessage}`);
+                        console.log(`[WhatsApp] ✅ Message sent to ${targetPhone} | ID: ${parsed.idMessage}`);
                         resolve({ success: true, id: parsed.idMessage });
                     } else {
                         console.error(`[WhatsApp] ❌ Unexpected response:`, data);
@@ -113,13 +126,13 @@ async function sendWhatsAppMessage(phone, message) {
  * @param {string} opts.priority
  * @param {string} opts.adminNotes
  */
-async function notifyWorkerAssignment({ assignedWorker, issueTitle, location, priority, adminNotes, completionUrl }) {
+async function notifyWorkerAssignment({ assignedWorker, issueTitle, location, priority, adminNotes, completionUrl, workerPhone }) {
     if (!assignedWorker || assignedWorker === 'Unassigned') {
         return { success: false, skipped: true, reasonCode: 'not_assigned' };
     }
 
     const name = extractWorkerName(assignedWorker);
-    const phone = WORKER_PHONES[name];
+    const phone = resolveWorkerPhone(name, workerPhone);
 
     if (!phone) {
         console.warn(`[WhatsApp] No phone number registered for: "${assignedWorker}"`);
@@ -153,8 +166,8 @@ async function notifyWorkerAssignment({ assignedWorker, issueTitle, location, pr
 
 function getWhatsAppUrl(phone, { issueTitle, location, priority, adminNotes, completionUrl }) {
     if (!phone) return null;
-    const clean = String(phone).replace(/\D/g, '');
-    const target = clean.startsWith('91') && clean.length > 10 ? clean : `91${clean.replace(/^0+/, '')}`;
+    const target = normalizeWhatsAppPhone(phone);
+    if (!target) return null;
     const priorityEmoji = { Urgent: '🚨', High: '🔴', Medium: '🟡', Low: '🟢' }[priority] || '📋';
     const message = [
         `🏫 *SDMCET Campus Fix — New Task Assigned*`,
@@ -173,4 +186,4 @@ function getWhatsAppUrl(phone, { issueTitle, location, priority, adminNotes, com
     return `https://api.whatsapp.com/send?phone=${target}&text=${encodeURIComponent(message)}`;
 }
 
-module.exports = { notifyWorkerAssignment, getWhatsAppUrl, extractWorkerName, WORKER_PHONES };
+module.exports = { notifyWorkerAssignment, getWhatsAppUrl, extractWorkerName, resolveWorkerPhone, WORKER_PHONES };

@@ -609,21 +609,25 @@ function App() {
         const sendViaProvider = options.sendViaProvider !== undefined
             ? options.sendViaProvider
             : !shouldOpenWhatsApp
+        const assignedWorkerDetails = getWorkerDetails(adminForm.assignedWorker)
         setSaving(true)
         try {
             const res = await fetch(`${apiUrl}/issues/${selectedIssue._id}/assign`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...adminForm, sendViaProvider }),
+                body: JSON.stringify({
+                    ...adminForm,
+                    sendViaProvider,
+                    ...(assignedWorkerDetails ? { workerPhone: assignedWorkerDetails.phone } : {}),
+                }),
             })
             const updated = await res.json()
             if (!res.ok) throw new Error(updated.message || 'Failed to update work assignment.')
 
             setIssues((curr) => curr.map((item) => (item._id === selectedIssue._id ? { ...item, ...updated } : item)))
 
-            const assignedWorkerDetails = getWorkerDetails(adminForm.assignedWorker)
             if (assignedWorkerDetails) {
-                const waUrl = updated.whatsappUrl || buildWhatsAppUrl(assignedWorkerDetails.phone, {
+                const waUrl = buildWhatsAppUrl(assignedWorkerDetails.phone, {
                     ...selectedIssue,
                     ...adminForm,
                     completionUrl: updated.completionUrl,

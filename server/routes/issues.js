@@ -29,7 +29,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const Issue = require('../models/Issue');
 const WhatsAppDispatch = require('../models/WhatsAppDispatch');
-const { notifyWorkerAssignment, getWhatsAppUrl, extractWorkerName, WORKER_PHONES } = require('../utils/whatsapp');
+const { notifyWorkerAssignment, getWhatsAppUrl, extractWorkerName, resolveWorkerPhone } = require('../utils/whatsapp');
 const { createCompletionAction, hashCompletionToken, isValidCompletionAction } = require('../utils/completionAction');
 const { validateCompletionPhoto } = require('../utils/completionPhoto');
 
@@ -529,7 +529,7 @@ router.patch('/:id/assign', async (req, res, next) => {
 
         if (assignedWorker && assignedWorker !== 'Unassigned') {
             const workerName = extractWorkerName(savedIssue.assignedWorker);
-            workerPhone = WORKER_PHONES[workerName] || null;
+            workerPhone = resolveWorkerPhone(workerName, req.body.workerPhone);
 
             if (workerPhone) {
                 whatsappUrl = getWhatsAppUrl(workerPhone, {
@@ -560,6 +560,7 @@ router.patch('/:id/assign', async (req, res, next) => {
                         priority: savedIssue.priority,
                         adminNotes: savedIssue.adminNotes,
                         completionUrl: completionAction?.url,
+                        workerPhone,
                     })
                         .then(async (result) => {
                             const status = result.success
@@ -585,6 +586,7 @@ router.patch('/:id/assign', async (req, res, next) => {
                     priority: savedIssue.priority,
                     adminNotes: savedIssue.adminNotes,
                     completionUrl: completionAction?.url,
+                    workerPhone,
                 }).catch((error) => {
                     console.error('[WhatsApp] Unexpected notification error:', error);
                 });

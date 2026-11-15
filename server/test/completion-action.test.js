@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createCompletionAction, isValidCompletionAction } = require('../utils/completionAction');
-const { getWhatsAppUrl } = require('../utils/whatsapp');
+const { getWhatsAppUrl, resolveWorkerPhone } = require('../utils/whatsapp');
 
 test('completion links are random, assignment-bound, expiring, and one-time', () => {
     const previousEnvironment = {
@@ -84,4 +84,18 @@ test('WhatsApp dispatch text contains the worker completion link', () => {
     });
 
     assert.ok(new URL(whatsappUrl).searchParams.get('text').includes(completionUrl));
+});
+
+test('WhatsApp dispatch uses the phone number shown for the selected worker', () => {
+    const displayedPhone = '+91 63660 21757';
+    const workerPhone = resolveWorkerPhone('Prakash Joshi', displayedPhone);
+    const whatsappUrl = getWhatsAppUrl(workerPhone, {
+        issueTitle: 'Desk repair',
+        location: '22a',
+        priority: 'High',
+        adminNotes: '',
+    });
+
+    assert.equal(workerPhone, '916366021757');
+    assert.equal(new URL(whatsappUrl).searchParams.get('phone'), '916366021757');
 });
