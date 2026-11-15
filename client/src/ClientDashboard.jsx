@@ -52,13 +52,39 @@ const apiUrl = configuredApiUrl
     ? `${configuredApiUrl.replace(/\/api$/i, '')}/api`
     : '/api'
 
+const COMPLETION_ACTION_SESSION_KEY = 'sdmcet-worker-completion-action'
+
 function readCompletionAction() {
     const match = window.location.hash.match(/^#complete\/([^/]+)\/([A-Za-z0-9_-]+)$/)
-    if (!match) return null
+    if (match) {
+        try {
+            return { issueId: decodeURIComponent(match[1]), token: match[2] }
+        } catch {
+            // Fall back to the saved action if the URL fragment is malformed.
+        }
+    }
+
     try {
-        return { issueId: decodeURIComponent(match[1]), token: match[2] }
+        const savedAction = JSON.parse(sessionStorage.getItem(COMPLETION_ACTION_SESSION_KEY) || 'null')
+        if (
+            typeof savedAction?.issueId === 'string' &&
+            typeof savedAction?.token === 'string' &&
+            /^[A-Za-z0-9_-]{43}$/.test(savedAction.token)
+        ) {
+            return savedAction
+        }
     } catch {
         return null
+    }
+
+    return null
+}
+
+function clearStoredCompletionAction() {
+    try {
+        sessionStorage.removeItem(COMPLETION_ACTION_SESSION_KEY)
+    } catch {
+        // The completed screen remains usable when session storage is unavailable.
     }
 }
 
@@ -323,6 +349,11 @@ function App() {
 
     useEffect(() => {
         if (!completionAction) return
+        try {
+            sessionStorage.setItem(COMPLETION_ACTION_SESSION_KEY, JSON.stringify(completionAction))
+        } catch {
+            return
+        }
         window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
     }, [completionAction])
 
@@ -3025,6 +3056,7 @@ function WorkerCompletionAction({ action }) {
             if (!response.ok) throw new Error(data.message || 'Could not update this task.')
             setIssue(data.issue)
             setPhase(nextPhase)
+            if (nextPhase === 'completed') clearStoredCompletionAction()
         } catch (requestError) {
             setError(requestError.message || 'Could not update this task.')
             setPhase('error')
