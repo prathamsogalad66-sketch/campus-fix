@@ -5419,3 +5419,319 @@ select:focus-visible {
         margin-bottom: 10px;
     }
 }
+
+
+/* =========================================================================
+   WORKER MANAGEMENT & DISPATCH ENHANCEMENTS
+   ========================================================================= */
+.worker-dispatch-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.add-worker-trigger-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(135deg, #eab308, #ca8a04);
+    color: #12140d;
+    font-weight: 700;
+    font-size: 13px;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(234, 179, 8, 0.25);
+    transition: all 0.2s ease;
+}
+
+.add-worker-trigger-btn:hover {
+    background: linear-gradient(135deg, #facc15, #eab308);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(234, 179, 8, 0.35);
+}
+
+.worker-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.worker-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #252a1e;
+    border: 1px solid #3d442c;
+    color: #c9d0b8;
+    padding: 4px 8px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.worker-icon-btn.edit:hover {
+    background: #394228;
+    border-color: #eab308;
+    color: #fef08a;
+}
+
+.worker-icon-btn.delete {
+    padding: 4px 6px;
+    color: #9fa691;
+}
+
+.worker-icon-btn.delete:hover {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: #ef4444;
+    color: #fca5a5;
+}
+
+/* Worker Form Modal */
+.worker-form-modal {
+    background: #181b14;
+    border: 1px solid #3d442c;
+    border-radius: 10px;
+    width: 100%;
+    max-width: 460px;
+    padding: 24px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.7);
+    animation: modalPop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.worker-form-modal.delete-modal {
+    max-width: 420px;
+}
+
+.worker-modal-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 18px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #2b301f;
+}
+
+.worker-modal-head strong {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 16px;
+    color: #f7f3e8;
+}
+
+.worker-modal-head p {
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: #9fa691;
+}
+
+.modal-close-btn {
+    background: transparent;
+    border: none;
+    color: #8d947f;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: color 0.15s;
+}
+
+.modal-close-btn:hover {
+    color: #f7f3e8;
+}
+
+.worker-modal-form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.worker-modal-form .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.worker-modal-form label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #a0a693;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+}
+
+.worker-modal-form input,
+.worker-modal-form select {
+    background: #11130d;
+    border: 1px solid #363c27;
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 13px;
+    color: #f7f3e8;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.worker-modal-form input:focus,
+.worker-modal-form select:focus {
+    border-color: #eab308;
+    box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.15);
+}
+
+.field-hint {
+    font-size: 11px;
+    color: #8d947f;
+    line-height: 1.4;
+}
+
+.worker-form-error {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #f87171;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    padding: 8px 12px;
+    border-radius: 6px;
+}
+
+.modal-actions-row {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+    padding-top: 12px;
+    border-top: 1px solid #2b301f;
+}
+
+.modal-cancel-btn {
+    background: #23271c;
+    border: 1px solid #363c27;
+    color: #c9d0b8;
+    padding: 9px 16px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.modal-cancel-btn:hover {
+    background: #2f3524;
+    color: #f7f3e8;
+}
+
+.modal-submit-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: linear-gradient(135deg, #eab308, #ca8a04);
+    border: none;
+    color: #12140d;
+    padding: 9px 18px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(234, 179, 8, 0.2);
+    transition: all 0.2s;
+}
+
+.modal-submit-btn:hover {
+    background: linear-gradient(135deg, #facc15, #eab308);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(234, 179, 8, 0.3);
+}
+
+.modal-delete-confirm-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #ef4444;
+    border: none;
+    color: #ffffff;
+    padding: 9px 18px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.modal-delete-confirm-btn:hover {
+    background: #dc2626;
+}
+
+.delete-modal-body {
+    font-size: 13px;
+    color: #d1d5db;
+    margin-bottom: 16px;
+    line-height: 1.5;
+}
+
+.delete-warning-note {
+    font-size: 12px;
+    color: #9fa691;
+    margin-top: 8px;
+    padding: 8px 10px;
+    background: #11130d;
+    border-left: 3px solid #ef4444;
+    border-radius: 4px;
+}
+
+/* Notification dismiss item */
+.notification-item-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.notification-dismiss-btn {
+    background: transparent;
+    border: none;
+    color: #747a66;
+    cursor: pointer;
+    padding: 3px 6px;
+    border-radius: 4px;
+    display: grid;
+    place-items: center;
+    opacity: 0.7;
+    transition: all 0.15s;
+}
+
+.notification-dismiss-btn:hover {
+    opacity: 1;
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.15);
+}
+
+.notification-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.notification-clear-all {
+    background: transparent;
+    border: none;
+    color: #eab308;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 2px 4px;
+    transition: text-decoration 0.15s;
+}
+
+.notification-clear-all:hover {
+    text-decoration: underline;
+}

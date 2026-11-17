@@ -10,6 +10,7 @@ const fs = require('fs');
 const { Server } = require('socket.io');
 const connectDB = require('./config/db');
 const issueRoutes = require('./routes/issues');
+const workerRoutes = require('./routes/workers');
 
 dotenv.config({ path: path.join(__dirname, '.env') });
 
@@ -59,6 +60,7 @@ app.use('/api/issues', (req, res, next) => {
 });
 
 app.use('/api/issues', issueRoutes);
+app.use('/api/workers', workerRoutes);
 
 // Fallback all non-API GET requests to index.html for SPA (Express 5 safe)
 if (fs.existsSync(clientDistPath)) {

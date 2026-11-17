@@ -30,7 +30,9 @@ import {
     Mail,
     Menu,
     MessageSquare,
+    Pencil,
     Phone,
+    Plus,
     RefreshCw,
     Search,
     Shield,
@@ -99,18 +101,45 @@ function checkAdminToken() {
     }
 }
 
-const CAMPUS_WORKERS = [
-    { name: 'Ramesh Kumar', trade: 'Electrician', phone: '+91 8123751706', icon: Zap },
-    { name: 'Suresh Patil', trade: 'Plumber', phone: '+91 77953 69555', icon: Droplets },
-    { name: 'Anand Deshpande', trade: 'IT & Network Tech', phone: '+91 98453 45623', icon: Activity },
-    { name: 'Kumar Naik', trade: 'Carpenter & Furniture', phone: '+91 98454 56734', icon: Wrench },
-    { name: 'Sunita Hiremath', trade: 'Housekeeping & Sanitation', phone: '+91 98455 67845', icon: Sparkles },
-    { name: 'Prakash Joshi', trade: 'Civil & Maintenance', phone: '+91 63660 21757', icon: Building },
+const DEFAULT_CAMPUS_WORKERS = [
+    { id: 'worker-1', name: 'Ramesh Kumar', trade: 'Electrician', phone: '+91 8123751706' },
+    { id: 'worker-2', name: 'Suresh Patil', trade: 'Plumber', phone: '+91 77953 69555' },
+    { id: 'worker-3', name: 'Anand Deshpande', trade: 'IT & Network Tech', phone: '+91 98453 45623' },
+    { id: 'worker-4', name: 'Kumar Naik', trade: 'Carpenter & Furniture', phone: '+91 98454 56734' },
+    { id: 'worker-5', name: 'Sunita Hiremath', trade: 'Housekeeping & Sanitation', phone: '+91 98455 67845' },
+    { id: 'worker-6', name: 'Prakash Joshi', trade: 'Civil & Maintenance', phone: '+91 63660 21757' },
 ]
 
-function getWorkerDetails(assignedWorkerString) {
+const WORKERS_STORAGE_KEY = 'sdmcet_campus_workers_v1'
+
+function getInitialWorkers() {
+    try {
+        const stored = localStorage.getItem(WORKERS_STORAGE_KEY)
+        if (stored) {
+            const parsed = JSON.parse(stored)
+            if (Array.isArray(parsed) && parsed.length > 0) return parsed
+        }
+    } catch {
+        // ignore
+    }
+    return DEFAULT_CAMPUS_WORKERS
+}
+
+function getWorkerIcon(trade) {
+    const t = (trade || '').toLowerCase()
+    if (t.includes('electr') || t.includes('power') || t.includes('zap')) return Zap
+    if (t.includes('plumb') || t.includes('water') || t.includes('pipe')) return Droplets
+    if (t.includes('it') || t.includes('network') || t.includes('tech') || t.includes('wifi') || t.includes('wi-fi') || t.includes('comput')) return Activity
+    if (t.includes('carpent') || t.includes('furnit') || t.includes('wood') || t.includes('desk')) return Wrench
+    if (t.includes('housekeep') || t.includes('clean') || t.includes('sanit') || t.includes('sweep')) return Sparkles
+    if (t.includes('civil') || t.includes('build') || t.includes('paint') || t.includes('mason') || t.includes('repair')) return Building
+    return HardHat
+}
+
+function getWorkerDetails(assignedWorkerString, workersList = DEFAULT_CAMPUS_WORKERS) {
     if (!assignedWorkerString || assignedWorkerString === 'Unassigned') return null
-    return CAMPUS_WORKERS.find((w) => assignedWorkerString.includes(w.name)) || null
+    const list = Array.isArray(workersList) && workersList.length > 0 ? workersList : DEFAULT_CAMPUS_WORKERS
+    return list.find((w) => assignedWorkerString.includes(w.name)) || null
 }
 
 function getWhatsAppTargetPhone(workerPhone) {
@@ -347,6 +376,165 @@ function App() {
     const [dispatchSuccessModal, setDispatchSuccessModal] = useState(null)
     const [autoNotifyWhatsApp, setAutoNotifyWhatsApp] = useState(true)
 
+    // Dynamic Campus Workers state (persisted in localStorage + backend sync)
+    const [workers, setWorkers] = useState(getInitialWorkers)
+    const [workerModalOpen, setWorkerModalOpen] = useState(false)
+    const [editingWorker, setEditingWorker] = useState(null)
+    const [workerForm, setWorkerForm] = useState({ name: '', trade: 'Electrician', customTrade: '', phone: '+91 ' })
+    const [workerFormError, setWorkerFormError] = useState('')
+    const [deleteWorkerTarget, setDeleteWorkerTarget] = useState(null)
+
+    // Notification dismissals state
+    const [dismissedResolvedIds, setDismissedResolvedIds] = useState(() => {
+        try {
+            const stored = localStorage.getItem('sdmcet_dismissed_resolved_notifications')
+            return stored ? JSON.parse(stored) : []
+        } catch {
+            return []
+        }
+    })
+
+    const dismissResolvedNotification = (e, issueId) => {
+        e.stopPropagation()
+        const updated = [...dismissedResolvedIds, String(issueId)]
+        setDismissedResolvedIds(updated)
+        try {
+            localStorage.setItem('sdmcet_dismissed_resolved_notifications', JSON.stringify(updated))
+        } catch {}
+    }
+
+    const clearAllResolvedNotifications = () => {
+        const allResolvedIds = roleScopedIssues.filter((i) => i.status === 'Resolved').map((i) => String(i._id))
+        const updated = Array.from(new Set([...dismissedResolvedIds, ...allResolvedIds]))
+        setDismissedResolvedIds(updated)
+        try {
+            localStorage.setItem('sdmcet_dismissed_resolved_notifications', JSON.stringify(updated))
+        } catch {}
+    }
+
+    // Save workers handler
+    const saveWorkers = (updatedList) => {
+        setWorkers(updatedList)
+        try {
+            localStorage.setItem(WORKERS_STORAGE_KEY, JSON.stringify(updatedList))
+        } catch (e) {
+            console.error('Failed to save workers to localStorage:', e)
+        }
+        fetch(`${apiUrl}/workers`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ workers: updatedList }),
+        }).catch(() => {})
+    }
+
+    // Fetch workers from backend on initial mount
+    useEffect(() => {
+        fetch(`${apiUrl}/workers`)
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data) => {
+                if (Array.isArray(data) && data.length > 0) {
+                    setWorkers(data)
+                    try {
+                        localStorage.setItem(WORKERS_STORAGE_KEY, JSON.stringify(data))
+                    } catch {}
+                }
+            })
+            .catch(() => {})
+    }, [])
+
+    const handleOpenAddWorker = () => {
+        setEditingWorker(null)
+        setWorkerForm({ name: '', trade: 'Electrician', customTrade: '', phone: '+91 ' })
+        setWorkerFormError('')
+        setWorkerModalOpen(true)
+    }
+
+    const handleOpenEditWorker = (worker) => {
+        setEditingWorker(worker)
+        const standardTrades = [
+            'Electrician',
+            'Plumber',
+            'IT & Network Tech',
+            'Carpenter & Furniture',
+            'Housekeeping & Sanitation',
+            'Civil & Maintenance',
+            'Security & Guard',
+            'Gardener & Landscaping',
+        ]
+        const isStandard = standardTrades.includes(worker.trade)
+        setWorkerForm({
+            name: worker.name,
+            trade: isStandard ? worker.trade : 'Other',
+            customTrade: isStandard ? '' : worker.trade,
+            phone: worker.phone || '+91 ',
+        })
+        setWorkerFormError('')
+        setWorkerModalOpen(true)
+    }
+
+    const handleSaveWorker = (e) => {
+        e.preventDefault()
+        const name = workerForm.name.trim()
+        const finalTrade = workerForm.trade === 'Other' ? workerForm.customTrade.trim() : workerForm.trade.trim()
+        let phone = workerForm.phone.trim()
+
+        if (!name) {
+            setWorkerFormError('Worker name is required.')
+            return
+        }
+        if (!finalTrade) {
+            setWorkerFormError('Trade or specialization is required.')
+            return
+        }
+        const digitsOnly = phone.replace(/\D/g, '')
+        if (digitsOnly.length < 10) {
+            setWorkerFormError('Please enter a valid phone number (at least 10 digits).')
+            return
+        }
+        if (!phone.startsWith('+')) {
+            phone = `+91 ${phone}`
+        }
+
+        if (editingWorker) {
+            const updated = workers.map((w) => {
+                if ((editingWorker.id && w.id === editingWorker.id) || w.name === editingWorker.name) {
+                    return {
+                        ...w,
+                        name,
+                        trade: finalTrade,
+                        phone,
+                    }
+                }
+                return w
+            })
+            saveWorkers(updated)
+            setNotice(`Worker details updated for ${name} (${phone}).`)
+        } else {
+            const newWorker = {
+                id: `worker-${Date.now()}`,
+                name,
+                trade: finalTrade,
+                phone,
+            }
+            saveWorkers([...workers, newWorker])
+            setNotice(`New campus technician ${name} (${finalTrade}) added successfully!`)
+        }
+        setWorkerModalOpen(false)
+        setEditingWorker(null)
+    }
+
+    const handleConfirmDeleteWorker = () => {
+        if (!deleteWorkerTarget) return
+        const removedName = deleteWorkerTarget.name
+        const updated = workers.filter((w) => {
+            if (deleteWorkerTarget.id && w.id) return w.id !== deleteWorkerTarget.id
+            return w.name !== deleteWorkerTarget.name
+        })
+        saveWorkers(updated)
+        setDeleteWorkerTarget(null)
+        setNotice(`Technician ${removedName} has been removed.`)
+    }
+
     useEffect(() => {
         if (!completionAction) return
         try {
@@ -511,6 +699,15 @@ function App() {
             setNotice(action === 'completed'
                 ? `${issue.completedBy || issue.assignedWorker} marked "${issue.title}" as completed.`
                 : `${issue.assignedWorker} reports that "${issue.title}" still needs more time.`)
+        })
+
+        socket.on('workers:updated', (updated) => {
+            if (Array.isArray(updated) && updated.length > 0) {
+                setWorkers(updated)
+                try {
+                    localStorage.setItem(WORKERS_STORAGE_KEY, JSON.stringify(updated))
+                } catch {}
+            }
         })
 
         return () => socket.disconnect()
@@ -700,7 +897,7 @@ function App() {
         const sendViaProvider = options.sendViaProvider !== undefined
             ? options.sendViaProvider
             : !shouldOpenWhatsApp
-        const assignedWorkerDetails = getWorkerDetails(adminForm.assignedWorker)
+        const assignedWorkerDetails = getWorkerDetails(adminForm.assignedWorker, workers)
         setSaving(true)
         try {
             const res = await fetch(`${apiUrl}/issues/${selectedIssue._id}/assign`, {
@@ -824,16 +1021,21 @@ function App() {
 
     // Worker workload
     const workersWithTasks = useMemo(() => {
-        return CAMPUS_WORKERS.map((worker) => {
+        return workers.map((worker) => {
             const active = issues.filter(
                 (i) => i.assignedWorker?.includes(worker.name) && i.status !== 'Resolved'
             ).length
             const completed = issues.filter(
                 (i) => i.assignedWorker?.includes(worker.name) && i.status === 'Resolved'
             ).length
-            return { ...worker, activeTasks: active, completedTasks: completed }
+            return {
+                ...worker,
+                icon: getWorkerIcon(worker.trade),
+                activeTasks: active,
+                completedTasks: completed,
+            }
         })
-    }, [issues])
+    }, [issues, workers])
 
     const spaces = useMemo(() => {
         const places = new Map()
@@ -1139,25 +1341,46 @@ function App() {
                                         </>
                                     ) : (
                                         <>
-                                            <strong>{isStudent ? 'Your Resolved Issues' : isAdmin ? 'Campus Resolved Reports' : 'Notifications'}</strong>
-                                            {roleScopedIssues.filter((i) => i.status === 'Resolved').length ? (
+                                            <div className="notification-header-row">
+                                                <strong>{isStudent ? 'Your Resolved Issues' : isAdmin ? 'Campus Resolved Reports' : 'Notifications'}</strong>
+                                                {roleScopedIssues.filter((i) => i.status === 'Resolved' && !dismissedResolvedIds.includes(String(i._id))).length > 0 && (
+                                                    <button
+                                                        type="button"
+                                                        className="notification-clear-all"
+                                                        onClick={clearAllResolvedNotifications}
+                                                    >
+                                                        Clear all
+                                                    </button>
+                                                )}
+                                            </div>
+                                            {roleScopedIssues.filter((i) => i.status === 'Resolved' && !dismissedResolvedIds.includes(String(i._id))).length ? (
                                                 roleScopedIssues
-                                                    .filter((i) => i.status === 'Resolved')
-                                                    .slice(0, 4)
+                                                    .filter((i) => i.status === 'Resolved' && !dismissedResolvedIds.includes(String(i._id)))
+                                                    .slice(0, 5)
                                                     .map((issue) => (
-                                                        <button
-                                                            key={issue._id}
-                                                            onClick={() => {
-                                                                setSelectedId(issue._id)
-                                                                setShowNotifications(false)
-                                                            }}
-                                                        >
-                                                            <Check size={14} />
-                                                            <span>
-                                                                {issue.title}
-                                                                <small>{relativeDate(issue.updatedAt || issue.createdAt)}</small>
-                                                            </span>
-                                                        </button>
+                                                        <div key={issue._id} className="notification-item-row">
+                                                            <button
+                                                                style={{ flex: 1, textAlign: 'left' }}
+                                                                onClick={() => {
+                                                                    setSelectedId(issue._id)
+                                                                    setShowNotifications(false)
+                                                                }}
+                                                            >
+                                                                <Check size={14} />
+                                                                <span>
+                                                                    {issue.title}
+                                                                    <small>{relativeDate(issue.updatedAt || issue.createdAt)}</small>
+                                                                </span>
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="notification-dismiss-btn"
+                                                                title="Dismiss notification"
+                                                                onClick={(e) => dismissResolvedNotification(e, issue._id)}
+                                                            >
+                                                                <Trash2 size={13} />
+                                                            </button>
+                                                        </div>
                                                     ))
                                             ) : (
                                                 <p>No new notifications.</p>
@@ -1524,6 +1747,7 @@ function App() {
                                         saving={saving}
                                         autoNotifyWhatsApp={autoNotifyWhatsApp}
                                         setAutoNotifyWhatsApp={setAutoNotifyWhatsApp}
+                                        workers={workers}
                                     />
                                 </section>
                             </>
@@ -1532,22 +1756,50 @@ function App() {
                     {/* ===================== WORKER DISPATCH TAB (ADMIN ONLY) ===================== */}
                     {activePage === 'Worker dispatch' && isAdmin && (
                         <div>
-                            <div className="toolbar-row">
-                                <p className="table-caption">
-                                    SDMCET Campus Maintenance Staff · Assign work orders according to specialization
-                                </p>
+                            <div className="worker-dispatch-toolbar">
+                                <div>
+                                    <p className="table-caption" style={{ margin: 0 }}>
+                                        SDMCET Campus Maintenance Staff · Assign work orders according to specialization ({workers.length} active technicians)
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    className="add-worker-trigger-btn"
+                                    onClick={handleOpenAddWorker}
+                                >
+                                    <Plus size={15} /> Add Campus Worker
+                                </button>
                             </div>
 
                             <div className="worker-card-grid">
                                 {workersWithTasks.map((worker) => (
-                                    <div className="worker-card" key={worker.name}>
+                                    <div className="worker-card" key={worker.id || worker.name}>
                                         <div className="worker-card-head">
                                             <div className="worker-avatar">
                                                 <worker.icon size={20} />
                                             </div>
-                                            <div className="worker-info">
+                                            <div className="worker-info" style={{ flex: 1, minWidth: 0 }}>
                                                 <strong>{worker.name}</strong>
                                                 <small>{worker.trade}</small>
+                                            </div>
+                                            <div className="worker-card-actions">
+                                                <button
+                                                    type="button"
+                                                    className="worker-icon-btn edit"
+                                                    title={`Edit ${worker.name}'s details & phone`}
+                                                    onClick={() => handleOpenEditWorker(worker)}
+                                                >
+                                                    <Pencil size={12} />
+                                                    <span>Edit</span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="worker-icon-btn delete"
+                                                    title={`Remove ${worker.name}`}
+                                                    onClick={() => setDeleteWorkerTarget(worker)}
+                                                >
+                                                    <Trash2 size={12} />
+                                                </button>
                                             </div>
                                         </div>
 
@@ -2058,6 +2310,28 @@ function App() {
                     }}
                 />
             )}
+
+            {/* ===================== WORKER ADD / EDIT MODAL ===================== */}
+            <WorkerFormModal
+                isOpen={workerModalOpen}
+                isEditing={Boolean(editingWorker)}
+                workerForm={workerForm}
+                setWorkerForm={setWorkerForm}
+                error={workerFormError}
+                onSave={handleSaveWorker}
+                onClose={() => {
+                    setWorkerModalOpen(false)
+                    setEditingWorker(null)
+                    setWorkerFormError('')
+                }}
+            />
+
+            {/* ===================== DELETE WORKER CONFIRMATION MODAL ===================== */}
+            <DeleteWorkerConfirmModal
+                target={deleteWorkerTarget}
+                onConfirm={handleConfirmDeleteWorker}
+                onClose={() => setDeleteWorkerTarget(null)}
+            />
         </div>
     )
 }
@@ -2079,6 +2353,7 @@ function IssueDetailsPanel({
     saving,
     autoNotifyWhatsApp,
     setAutoNotifyWhatsApp,
+    workers = DEFAULT_CAMPUS_WORKERS,
 }) {
     const [pendingDeleteId, setPendingDeleteId] = useState(null)
     const [flowNotice, setFlowNotice] = useState('')
@@ -2133,18 +2408,18 @@ function IssueDetailsPanel({
     const hasWorker = effectiveWorker && effectiveWorker !== 'Unassigned'
     const isResolved = effectiveStatus === 'Resolved'
     const isInProgress = effectiveStatus === 'In progress' || isResolved
-    const activeWorkerDetails = getWorkerDetails(adminForm.assignedWorker)
-    const assignedWorkerInfo = getWorkerDetails(effectiveWorker)
+    const activeWorkerDetails = getWorkerDetails(adminForm.assignedWorker, workers)
+    const assignedWorkerInfo = getWorkerDetails(effectiveWorker, workers)
 
     // Recommended technician based on issue category
     const getRecommendedWorker = () => {
         const cat = (issue.category || '').toLowerCase()
-        if (cat.includes('electr')) return CAMPUS_WORKERS.find(w => w.trade === 'Electrician') || CAMPUS_WORKERS[0]
-        if (cat.includes('plumb') || cat.includes('water')) return CAMPUS_WORKERS.find(w => w.trade === 'Plumber') || CAMPUS_WORKERS[1]
-        if (cat.includes('it') || cat.includes('network') || cat.includes('wi-fi')) return CAMPUS_WORKERS.find(w => w.trade.includes('IT')) || CAMPUS_WORKERS[2]
-        if (cat.includes('furnit') || cat.includes('carpent')) return CAMPUS_WORKERS.find(w => w.trade.includes('Carpenter')) || CAMPUS_WORKERS[3]
-        if (cat.includes('sanit') || cat.includes('clean') || cat.includes('housekeep')) return CAMPUS_WORKERS.find(w => w.trade.includes('Housekeeping')) || CAMPUS_WORKERS[4]
-        return CAMPUS_WORKERS.find(w => w.trade.includes('Civil')) || CAMPUS_WORKERS[0]
+        if (cat.includes('electr')) return workers.find(w => w.trade === 'Electrician') || workers[0]
+        if (cat.includes('plumb') || cat.includes('water')) return workers.find(w => w.trade === 'Plumber') || workers[1] || workers[0]
+        if (cat.includes('it') || cat.includes('network') || cat.includes('wi-fi')) return workers.find(w => w.trade.includes('IT')) || workers[2] || workers[0]
+        if (cat.includes('furnit') || cat.includes('carpent')) return workers.find(w => w.trade.includes('Carpenter')) || workers[3] || workers[0]
+        if (cat.includes('sanit') || cat.includes('clean') || cat.includes('housekeep')) return workers.find(w => w.trade.includes('Housekeeping')) || workers[4] || workers[0]
+        return workers.find(w => w.trade.includes('Civil')) || workers[0]
     }
     const recommendedWorker = getRecommendedWorker()
 
@@ -2626,8 +2901,8 @@ function IssueDetailsPanel({
                             onChange={(e) => setAdminForm({ ...adminForm, assignedWorker: e.target.value })}
                         >
                             <option value="Unassigned">-- Choose Campus Technician --</option>
-                            {CAMPUS_WORKERS.map((w) => (
-                                <option key={w.name} value={`${w.name} (${w.trade})`}>
+                            {workers.map((w) => (
+                                <option key={w.id || w.name} value={`${w.name} (${w.trade})`}>
                                     {w.name} - {w.trade}
                                 </option>
                             ))}
@@ -3191,6 +3466,183 @@ function WorkerCompletionAction({ action }) {
                 )}
             </section>
         </main>
+    )
+}
+
+/* =========================================================================
+   CAMPUS WORKER ADD & EDIT MODAL
+   ========================================================================= */
+function WorkerFormModal({
+    isOpen,
+    isEditing,
+    workerForm,
+    setWorkerForm,
+    error,
+    onSave,
+    onClose,
+}) {
+    if (!isOpen) return null
+
+    const standardTrades = [
+        'Electrician',
+        'Plumber',
+        'IT & Network Tech',
+        'Carpenter & Furniture',
+        'Housekeeping & Sanitation',
+        'Civil & Maintenance',
+        'Security & Guard',
+        'Gardener & Landscaping',
+        'Other',
+    ]
+
+    return (
+        <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+            <div className="worker-form-modal">
+                <div className="worker-modal-head">
+                    <div>
+                        <strong>
+                            {isEditing ? <Pencil size={18} style={{ color: '#eab308' }} /> : <Plus size={18} style={{ color: '#eab308' }} />}
+                            {isEditing ? 'Edit Campus Worker' : 'Add New Campus Worker'}
+                        </strong>
+                        <p>
+                            {isEditing
+                                ? 'Update worker details, trade, and WhatsApp contact number.'
+                                : 'Register a new maintenance worker to dispatch campus complaints.'}
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="modal-close-btn"
+                        aria-label="Close"
+                    >
+                        <X size={18} />
+                    </button>
+                </div>
+
+                <form onSubmit={onSave} className="worker-modal-form">
+                    <div className="form-group">
+                        <label>Worker Full Name</label>
+                        <input
+                            type="text"
+                            required
+                            autoFocus
+                            placeholder="e.g. Ramesh Kumar"
+                            value={workerForm.name}
+                            onChange={(e) => setWorkerForm({ ...workerForm, name: e.target.value })}
+                        />
+                    </div>
+
+                    <div className="form-group">
+                        <label>Specialization / Trade</label>
+                        <select
+                            value={workerForm.trade}
+                            onChange={(e) => setWorkerForm({ ...workerForm, trade: e.target.value })}
+                        >
+                            {standardTrades.map((trade) => (
+                                <option key={trade} value={trade}>
+                                    {trade}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {workerForm.trade === 'Other' && (
+                        <div className="form-group">
+                            <label>Custom Specialization Name</label>
+                            <input
+                                type="text"
+                                required
+                                placeholder="e.g. HVAC / AC Technician"
+                                value={workerForm.customTrade}
+                                onChange={(e) => setWorkerForm({ ...workerForm, customTrade: e.target.value })}
+                            />
+                        </div>
+                    )}
+
+                    <div className="form-group">
+                        <label>WhatsApp Contact Number</label>
+                        <input
+                            type="text"
+                            required
+                            placeholder="+91 8123751706"
+                            value={workerForm.phone}
+                            onChange={(e) => setWorkerForm({ ...workerForm, phone: e.target.value })}
+                        />
+                        <span className="field-hint">
+                            📱 Messages & work orders will be sent directly to this WhatsApp number.
+                        </span>
+                    </div>
+
+                    {error && (
+                        <div className="worker-form-error">
+                            <AlertCircle size={14} /> {error}
+                        </div>
+                    )}
+
+                    <div className="modal-actions-row">
+                        <button type="button" className="modal-cancel-btn" onClick={onClose}>
+                            Cancel
+                        </button>
+                        <button type="submit" className="modal-submit-btn">
+                            <CheckCircle2 size={16} /> {isEditing ? 'Save Changes' : 'Add Worker'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    )
+}
+
+/* =========================================================================
+   DELETE WORKER CONFIRMATION MODAL
+   ========================================================================= */
+function DeleteWorkerConfirmModal({
+    target,
+    onConfirm,
+    onClose,
+}) {
+    if (!target) return null
+
+    return (
+        <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+            <div className="worker-form-modal delete-modal">
+                <div className="worker-modal-head">
+                    <div>
+                        <strong style={{ color: '#ef4444' }}>
+                            <Trash2 size={18} /> Remove Worker
+                        </strong>
+                        <p>Are you sure you want to remove this staff member?</p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="modal-close-btn"
+                        aria-label="Close"
+                    >
+                        <X size={18} />
+                    </button>
+                </div>
+
+                <div className="delete-modal-body">
+                    <p>
+                        You are about to remove <strong>{target.name}</strong> ({target.trade}).
+                    </p>
+                    <p className="delete-warning-note">
+                        This worker will no longer appear in the "Worker dispatch" list or the "Assign Respected Worker" dropdown for tickets.
+                    </p>
+                </div>
+
+                <div className="modal-actions-row">
+                    <button type="button" className="modal-cancel-btn" onClick={onClose}>
+                        Cancel
+                    </button>
+                    <button type="button" className="modal-delete-confirm-btn" onClick={onConfirm}>
+                        <Trash2 size={15} /> Yes, Remove Worker
+                    </button>
+                </div>
+            </div>
+        </div>
     )
 }
 
