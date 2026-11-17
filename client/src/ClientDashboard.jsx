@@ -566,7 +566,7 @@ function App() {
                 }
                 localStorage.setItem('sdmcet-prototype-session', JSON.stringify(adminSession))
                 setUser(adminSession)
-                setNotice('Admin credentials verified. Welcome to Admin Control Centre.')
+                setNotice('Admin credentials verified. Welcome to Campus Maintenance Administrator.')
             } else if (adminQuery === 'true' || adminQuery === 'admin') {
                 setShowAdminUnlockModal(true)
             }
@@ -606,7 +606,7 @@ function App() {
             setUser(adminSession)
             setActivePage('Overview')
             setSelectedId(null)
-            setNotice('Admin access granted. Welcome to Admin Control Centre.')
+            setNotice('Admin access granted. Welcome to Campus Maintenance Administrator.')
         } else {
             setAdminPasscodeError('Invalid Admin Passcode. Access denied.')
         }
@@ -1140,7 +1140,7 @@ function App() {
                         <span className="brand-product-name">SDMCampusFix</span>
                         <div style={{ marginTop: '4px' }}>
                             <span className={`role-badge ${user.role}`}>
-                                {isStudent ? 'Student Portal' : 'Admin Centre'}
+                                {isStudent ? 'Student Portal' : 'Campus Maintenance Administrator'}
                             </span>
                         </div>
                     </div>
@@ -1222,12 +1222,12 @@ function App() {
                             <button
                                 className="role-switcher-btn"
                                 onClick={switchRole}
-                                title={isStudent ? 'Return to Admin Centre' : 'Preview Student View'}
+                                title={isStudent ? 'Return to Campus Maintenance Administrator' : 'Preview Student View'}
                             >
                                 {isStudent ? (
                                     <>
                                         <Shield size={14} style={{ color: '#efc15e' }} />
-                                        <span>Return to Admin Centre</span>
+                                        <span>Return to Campus Maintenance Administrator</span>
                                     </>
                                 ) : (
                                     <>
@@ -1461,7 +1461,7 @@ function App() {
                                         ? `Welcome, ${currentUser}`
                                         : activePage
                                     : activePage === 'Overview'
-                                        ? `Admin Control Centre`
+                                        ? `Campus Maintenance Administrator`
                                         : activePage}
                             </h1>
                             <p className="subtitle">
@@ -3196,7 +3196,7 @@ function LoginScreen({ onSignIn, onOpenAdminModal }) {
                             onClick={onOpenAdminModal}
                             title="Authorized facility staff login"
                         >
-                            <Lock size={12} /> Estates Staff Access
+                            <Lock size={12} /> CMA Staff Access
                         </button>
                     </div>
                 </div>
@@ -3219,9 +3219,9 @@ function AdminPasscodeModal({ passcode, setPasscode, error, onSubmit, onClose })
                 <div className="admin-passcode-head">
                     <div>
                         <strong>
-                            <Shield size={18} style={{ color: '#eab308' }} /> Estates Admin Gate
+                            <Shield size={18} style={{ color: '#eab308' }} /> CMA Admin Gate
                         </strong>
-                        <p>Authorized maintenance & facility personnel only.</p>
+                        <p>Authorized campus maintenance & facility personnel only.</p>
                     </div>
                     <button
                         type="button"
