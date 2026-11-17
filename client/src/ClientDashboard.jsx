@@ -384,6 +384,58 @@ function App() {
     const [workerFormError, setWorkerFormError] = useState('')
     const [deleteWorkerTarget, setDeleteWorkerTarget] = useState(null)
 
+    // Student reporter deletion state
+    const [deleteReporterTarget, setDeleteReporterTarget] = useState(null)
+    const [hiddenReporters, setHiddenReporters] = useState(() => {
+        try {
+            const s = localStorage.getItem('sdmcet_hidden_reporters')
+            return s ? JSON.parse(s) : []
+        } catch {
+            return []
+        }
+    })
+
+    const handleDeleteReporter = async () => {
+        if (!deleteReporterTarget) return
+        const target = deleteReporterTarget
+        const targetName = target.name
+        const targetEmail = target.email
+
+        const reporterIssues = issues.filter(
+            (i) =>
+                (i.reporter && i.reporter.trim().toLowerCase() === targetName.trim().toLowerCase()) ||
+                (targetEmail && targetEmail !== 'Not provided' && i.reporterEmail && i.reporterEmail.trim().toLowerCase() === targetEmail.trim().toLowerCase())
+        )
+
+        try {
+            setNotice(`Deleting reports for ${targetName}...`)
+            await Promise.all(
+                reporterIssues.map((i) =>
+                    fetch(`${apiUrl}/issues/${i._id}`, { method: 'DELETE' }).catch(() => {})
+                )
+            )
+
+            const remainingIssues = issues.filter(
+                (i) =>
+                    !((i.reporter && i.reporter.trim().toLowerCase() === targetName.trim().toLowerCase()) ||
+                      (targetEmail && targetEmail !== 'Not provided' && i.reporterEmail && i.reporterEmail.trim().toLowerCase() === targetEmail.trim().toLowerCase()))
+            )
+            setIssues(remainingIssues)
+
+            const updatedHidden = Array.from(new Set([...hiddenReporters, targetName.trim().toLowerCase()]))
+            setHiddenReporters(updatedHidden)
+            try {
+                localStorage.setItem('sdmcet_hidden_reporters', JSON.stringify(updatedHidden))
+            } catch {}
+
+            setNotice(`Student "${targetName}" and all associated reports have been deleted.`)
+        } catch (err) {
+            setNotice(err.message || 'Failed to delete student reports.')
+        } finally {
+            setDeleteReporterTarget(null)
+        }
+    }
+
     // Notification dismissals state
     const [dismissedResolvedIds, setDismissedResolvedIds] = useState(() => {
         try {
@@ -1055,6 +1107,7 @@ function App() {
         const people = new Map()
         issues.forEach((issue) => {
             const name = issue.reporter || 'Anonymous'
+            if (hiddenReporters.includes(name.trim().toLowerCase())) return
             const person = people.get(name) || {
                 name,
                 email: issue.reporterEmail || 'Not provided',
@@ -1068,7 +1121,7 @@ function App() {
             people.set(name, person)
         })
         return [...people.values()].sort((a, b) => b.reports - a.reports)
-    }, [issues])
+    }, [issues, hiddenReporters])
 
     const navigate = (page) => {
         if (page === 'Report a problem') {
@@ -1943,16 +1996,19 @@ function App() {
                                                 <th>Total Reports</th>
                                                 <th>Open Reports</th>
                                                 <th>Resolved</th>
+                                                <th style={{ textAlign: 'right' }}>Action</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {contributors.map((person) => (
                                                 <tr key={person.name}>
                                                     <td>
-                                                        <strong className="person-name">
-                                                            <span className="person-avatar">{initials(person.name)}</span>
-                                                            {person.name}
-                                                        </strong>
+                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                                                            <strong className="person-name">
+                                                                <span className="person-avatar">{initials(person.name)}</span>
+                                                                {person.name}
+                                                            </strong>
+                                                        </div>
                                                     </td>
                                                     <td style={{ color: '#a0a693' }}>{person.email}</td>
                                                     <td>{person.reports}</td>
@@ -1960,8 +2016,26 @@ function App() {
                                                     <td>
                                                         <span className="number-good">{person.resolved}</span>
                                                     </td>
+                                                    <td style={{ textAlign: 'right' }}>
+                                                        <button
+                                                            type="button"
+                                                            className="row-delete-btn"
+                                                            title={`Delete ${person.name} and remove their reports`}
+                                                            onClick={() => setDeleteReporterTarget(person)}
+                                                        >
+                                                            <Trash2 size={13} />
+                                                            <span>Delete</span>
+                                                        </button>
+                                                    </td>
                                                 </tr>
                                             ))}
+                                            {contributors.length === 0 && (
+                                                <tr>
+                                                    <td colSpan="6" style={{ textAlign: 'center', padding: '30px', color: '#888' }}>
+                                                        No student reporters found.
+                                                    </td>
+                                                </tr>
+                                            )}
                                         </tbody>
                                     </table>
                                 </div>
@@ -2332,6 +2406,48 @@ function App() {
                 onConfirm={handleConfirmDeleteWorker}
                 onClose={() => setDeleteWorkerTarget(null)}
             />
+
+            {/* ===================== DELETE STUDENT REPORTER CONFIRMATION MODAL ===================== */}
+            {deleteReporterTarget && (
+                <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setDeleteReporterTarget(null)}>
+                    <div className="worker-form-modal delete-modal">
+                        <div className="worker-modal-head">
+                            <div>
+                                <strong style={{ color: '#ef4444' }}>
+                                    <Trash2 size={18} /> Delete Student Reporter
+                                </strong>
+                                <p>Are you sure you want to remove this reporter?</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setDeleteReporterTarget(null)}
+                                className="modal-close-btn"
+                                aria-label="Close"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <div className="delete-modal-body">
+                            <p>
+                                You are about to delete reporter <strong>{deleteReporterTarget.name}</strong> ({deleteReporterTarget.email}).
+                            </p>
+                            <p className="delete-warning-note">
+                                ⚠️ This will delete all <strong>{deleteReporterTarget.reports}</strong> campus issue report(s) submitted by this student from the campus database.
+                            </p>
+                        </div>
+
+                        <div className="modal-actions-row">
+                            <button type="button" className="modal-cancel-btn" onClick={() => setDeleteReporterTarget(null)}>
+                                Cancel
+                            </button>
+                            <button type="button" className="modal-delete-confirm-btn" onClick={handleDeleteReporter}>
+                                <Trash2 size={15} /> Yes, Delete Reporter
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }
